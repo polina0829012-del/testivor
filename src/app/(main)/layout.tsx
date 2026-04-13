@@ -1,5 +1,7 @@
 import { AppHeader } from "@/components/app-header";
 
+export const dynamic = "force-dynamic";
+
 export default function MainLayout({ children }: { children: React.ReactNode }) {
   return (
     <>

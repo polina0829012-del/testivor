@@ -2,17 +2,24 @@
   "name": "interview-intelligence-platform",
   "version": "0.1.0",
   "private": true,
+  "engines": {
+    "node": ">=18.18.0"
+  },
   "scripts": {
+    "postinstall": "prisma generate",
     "dev": "next dev",
     "dev:turbo": "next dev --turbo",
-    "build": "prisma generate && prisma migrate deploy && next build",
+    "build": "prisma migrate deploy && next build",
     "start": "next start",
     "lint": "next lint",
     "db:push": "prisma db push",
     "db:generate": "prisma generate",
     "db:update": "prisma migrate deploy && prisma generate",
     "db:seed": "prisma db seed",
-    "db:studio": "prisma studio"
+    "db:studio": "prisma studio",
+    "vercel:push-env": "node scripts/push-env-to-vercel.mjs",
+    "vercel:deploy": "node scripts/trigger-vercel-deploy.mjs",
+    "vercel:print-url": "node scripts/fetch-vercel-production-url.mjs"
   },
   "dependencies": {
     "@prisma/client": "^6.5.0",

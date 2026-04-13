@@ -4,6 +4,8 @@ import { getServerSession } from "next-auth";
 import { authOptions } from "@/lib/auth-options";
 import { RegisterForm } from "./ui";
 
+export const dynamic = "force-dynamic";
+
 export default async function RegisterPage() {
   const session = await getServerSession(authOptions);
   if (session) redirect("/dashboard");
