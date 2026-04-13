@@ -69,7 +69,7 @@ npm.cmd run vercel:push-env
 | Переменная        | Значение |
 |-------------------|----------|
 | `DATABASE_URL`    | строка из Neon |
-| `DIRECT_URL`      | для Prisma migrate: обычно **тот же** URL, что и `DATABASE_URL` (или отдельный direct/host без pooler в Neon) |
+| `DIRECT_URL`      | опционально: для Prisma migrate; если не задать, при сборке подставится из `DATABASE_URL`. Отдельный direct/host без pooler в Neon — только если миграции с pooled URL падают |
 | `NEXTAUTH_URL`    | после первого деплоя будет `https://ваш-проект.vercel.app` (потом обновите и сделайте **Redeploy**) |
 | `NEXTAUTH_SECRET` | случайная строка, напр. вывод `openssl rand -base64 32` |
 | `OPENAI_API_KEY`  | по желанию, иначе кнопки ИИ будут падать с ошибкой API |
@@ -78,11 +78,11 @@ npm.cmd run vercel:push-env
 
 Скрипт `npm run vercel:push-env` сам добавляет `DIRECT_URL` (копия `DATABASE_URL`, если в `.env` не задано).
 
-2. **Deploy**. После `npm install` выполняется `postinstall` → `prisma generate`; при сборке — `prisma migrate deploy` и `next build`. Ветка **Production** в Vercel должна быть **`main`**.
+2. **Deploy**. После `npm install` выполняется `postinstall` → `prisma generate`; при сборке — `node scripts/vercel-build.mjs` (миграции + `next build`; без `DIRECT_URL` в панели Vercel он берётся из `DATABASE_URL`). Ветка **Production** в Vercel должна быть **`main`**.
 
 ### Если в Vercel: «No Production Deployment»
 
-Все билды в **Deployments** со статусом **Error** — откройте логи. Частые причины: нет `DATABASE_URL` / `DIRECT_URL` для **Production**, или миграции не проходят к Neon. После правки env сделайте **Redeploy** или пуш в `main`.
+Все билды в **Deployments** со статусом **Error** — откройте логи. Частые причины: нет **`DATABASE_URL`** для **Production**, или миграции не проходят к Neon. `DIRECT_URL` для билда не обязателен, если задан `DATABASE_URL`. После правки env сделайте **Redeploy** или пуш в `main`.
 
 3. После деплоя откройте **Settings → Domains**, скопируйте URL, вернитесь в **Environment Variables**, выставьте `NEXTAUTH_URL` на этот `https://...` и запустите **Redeploy**.
 

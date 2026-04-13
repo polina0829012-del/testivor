@@ -9,7 +9,7 @@
     "postinstall": "prisma generate",
     "dev": "next dev",
     "dev:turbo": "next dev --turbo",
-    "build": "prisma migrate deploy && next build",
+    "build": "node scripts/vercel-build.mjs",
     "start": "next start",
     "lint": "next lint",
     "db:push": "prisma db push",
