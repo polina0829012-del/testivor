@@ -31,7 +31,7 @@ export function isLlmConfigured(): boolean {
 
 /** Сборка/рантайм на Vercel (для подсказок в UI). */
 export function isVercelDeployment(): boolean {
-  return envStr("VERCEL") === "1";
+  return envStr("VERCEL") === "1" || Boolean(envStr("VERCEL_ENV"));
 }
 
 /** Заголовок HTTP-Referer для OpenRouter: прод-URL, иначе localhost. */

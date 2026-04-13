@@ -103,8 +103,8 @@ export default async function DashboardPage({
           {llmOk
             ? "ИИ выполняется на сервере: любой пользователь, вошедший на этот сайт, использует одни и те же настройки LLM (ваш ключ на хостинге)."
             : onVercel
-              ? "Сервер Vercel не видит ваш локальный .env. Откройте проект → Settings → Environment Variables → Production: добавьте OPENAI_API_KEY или OPENROUTER_API_KEY, OPENAI_BASE_URL=https://openrouter.ai/api/v1, OPENAI_MODEL=openai/gpt-4o-mini, сохраните и сделайте Redeploy — после этого ИИ заработает у всех по ссылке на приложение."
-              : "Добавьте в .env или .env.local переменные OPENAI_API_KEY, OPENROUTER_API_KEY, LLM_API_KEY или AI_API_KEY и при необходимости OPENAI_BASE_URL / OPENAI_MODEL, затем перезапустите dev."}
+              ? "Сервер не видит ключ: в Vercel → Settings → Environment Variables добавьте для той же среды, что и деплой (часто Production), переменные: OPENAI_API_KEY или OPENROUTER_API_KEY, OPENAI_BASE_URL=https://openrouter.ai/api/v1, OPENAI_MODEL=openai/gpt-4o-mini. Сохраните и Redeploy. Локальный .env с ПК сюда не подставляется."
+              : "Локально: в корне проекта в .env или .env.local задайте OPENAI_API_KEY или OPENROUTER_API_KEY (и при OpenRouter — OPENAI_BASE_URL / OPENAI_MODEL), полностью перезапустите npm run dev. Если открываете сайт на vercel.app — ключи нужны в панели Vercel, не только в .env."}
         </p>
       </div>
 
