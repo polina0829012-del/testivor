@@ -1,0 +1,118 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+model User {
+  id           String    @id @default(cuid())
+  email        String    @unique
+  passwordHash String
+  name         String?
+  createdAt    DateTime  @default(now())
+  vacancies    Vacancy[]
+}
+
+model Vacancy {
+  id                       String      @id @default(cuid())
+  userId                   String
+  user                     User        @relation(fields: [userId], references: [id], onDelete: Cascade)
+  title                    String
+  level                    String
+  competencies             String
+  /// Устарело: текст перенесён в competencies; поле очищается при сохранении из UI
+  expectationsForCandidate String    @default("")
+  /// Внутренняя заметка только для HR
+  recruiterInternalNote    String      @default("")
+  /// low | normal | high | urgent
+  priority                 String      @default("normal")
+  /// draft | active | on_hold | closed
+  status                   String      @default("active")
+  targetCloseDate          DateTime?
+  /// office | hybrid | remote | ""
+  workFormat               String      @default("")
+  planUpdatedAt            DateTime    @default(now())
+  createdAt                DateTime    @default(now())
+  blocks                   PlanBlock[]
+  candidates               Candidate[]
+}
+
+model PlanBlock {
+  id        String         @id @default(cuid())
+  vacancyId String
+  vacancy   Vacancy        @relation(fields: [vacancyId], references: [id], onDelete: Cascade)
+  title     String
+  sortOrder Int
+  required  Boolean        @default(false)
+  questions PlanQuestion[]
+  scores    BlockScore[]
+}
+
+model PlanQuestion {
+  id           String           @id @default(cuid())
+  blockId      String
+  block        PlanBlock        @relation(fields: [blockId], references: [id], onDelete: Cascade)
+  text         String
+  sortOrder    Int
+  /// text = развёрнутый ответ; rating = балл 1–5 по пункту
+  responseType String           @default("text")
+  answers      QuestionAnswer[]
+}
+
+model Candidate {
+  id                 String         @id @default(cuid())
+  vacancyId          String
+  vacancy            Vacancy        @relation(fields: [vacancyId], references: [id], onDelete: Cascade)
+  name               String
+  summaryJson        String?
+  risksJson          String?
+  discrepanciesJson  String?
+  summaryUpdatedAt   DateTime?
+  createdAt          DateTime       @default(now())
+  interviewers       Interviewer[]
+}
+
+model Interviewer {
+  id          String    @id @default(cuid())
+  candidateId String
+  candidate   Candidate @relation(fields: [candidateId], references: [id], onDelete: Cascade)
+  name        String
+  inviteToken String    @unique @default(cuid())
+  protocol    Protocol?
+}
+
+model Protocol {
+  id              String            @id @default(cuid())
+  interviewerId   String            @unique
+  interviewer     Interviewer       @relation(fields: [interviewerId], references: [id], onDelete: Cascade)
+  submittedAt     DateTime?
+  scores          BlockScore[]
+  questionAnswers QuestionAnswer[]
+}
+
+model QuestionAnswer {
+  id             String       @id @default(cuid())
+  protocolId     String
+  protocol       Protocol     @relation(fields: [protocolId], references: [id], onDelete: Cascade)
+  planQuestionId String
+  planQuestion   PlanQuestion @relation(fields: [planQuestionId], references: [id], onDelete: Cascade)
+  textAnswer     String       @default("")
+  scoreAnswer    Int?
+
+  @@unique([protocolId, planQuestionId])
+}
+
+model BlockScore {
+  id          String    @id @default(cuid())
+  protocolId  String
+  protocol    Protocol  @relation(fields: [protocolId], references: [id], onDelete: Cascade)
+  planBlockId String
+  planBlock   PlanBlock @relation(fields: [planBlockId], references: [id], onDelete: Cascade)
+  score       Int
+  notes       String    @default("")
+
+  @@unique([protocolId, planBlockId])
+}
