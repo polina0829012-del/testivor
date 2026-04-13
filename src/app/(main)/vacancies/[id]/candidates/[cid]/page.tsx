@@ -4,7 +4,7 @@ import { getServerSession } from "next-auth";
 import { authOptions } from "@/lib/auth-options";
 import { prisma } from "@/lib/prisma";
 import { averageRatingForBlock, blockHasRatingQuestions } from "@/lib/block-scores";
-import { computeDiscrepancies } from "@/lib/discrepancies";
+import { computeDiscrepancies, type Discrepancy } from "@/lib/discrepancies";
 import { candidateDisplayName, candidateReadiness } from "@/lib/stats";
 import { getRequestOrigin } from "@/lib/app-origin";
 import { recommendationLabelRu } from "@/lib/recommendation-labels";
@@ -78,13 +78,18 @@ export default async function CandidatePage({
     }
   }
 
-  let discStored: {
-    discrepancies?: typeof discCalc;
-    narrative?: { explanations?: { blockTitle: string; text: string }[]; tip?: string } | null;
-  } | null = null;
+  type StoredDiscrepanciesData = {
+    discrepancies?: Discrepancy[];
+    narrative?: {
+      explanations?: { blockTitle: string; text: string }[];
+      tip?: string;
+    } | null;
+  };
+
+  let discStored: StoredDiscrepanciesData | null = null;
   if (c.discrepanciesJson) {
     try {
-      discStored = JSON.parse(c.discrepanciesJson) as typeof discStored;
+      discStored = JSON.parse(c.discrepanciesJson) as StoredDiscrepanciesData;
     } catch {
       discStored = null;
     }

@@ -17,6 +17,10 @@ const collapseToggleClass =
 const panelShellClass =
   "rounded-2xl border border-black/[0.07] bg-[hsl(var(--surface))] p-5 shadow-[0_1px_3px_rgba(0,0,0,0.04)] ring-1 ring-black/[0.03] dark:border-white/[0.08] dark:shadow-none dark:ring-white/[0.04] sm:p-6";
 
+function asUserErrorMessage(value: unknown, fallback: string): string {
+  return typeof value === "string" && value.trim() ? value : fallback;
+}
+
 type PlanBlocksCtx = { activeId: string; setActiveId: (id: string) => void; multi: boolean };
 
 const PlanBlocksContext = createContext<PlanBlocksCtx | null>(null);
@@ -354,7 +358,7 @@ export function QuestionBankButton({ vacancyId }: { vacancyId: string }) {
                     .map(([id]) => id);
                   start(async () => {
                     const r = await importQuestionBankBlocks(vacancyId, ids);
-                    if ("error" in r) setErr(r.error ?? "Ошибка");
+                    if ("error" in r) setErr(asUserErrorMessage(r.error, "Ошибка"));
                     else {
                       setOpen(false);
                       setSelected({});
@@ -389,9 +393,10 @@ export function GeneratePlanButton({ vacancyId }: { vacancyId: string }) {
           setNotice(null);
           start(async () => {
             const r = await runGeneratePlanAI(vacancyId);
-            if ("error" in r) setErr(r.error ?? "Ошибка ИИ");
+            if ("error" in r) setErr(asUserErrorMessage(r.error, "Ошибка ИИ"));
             else {
-              setNotice("notice" in r && r.notice != null ? r.notice : null);
+              const notice = "notice" in r ? r.notice : undefined;
+              setNotice(typeof notice === "string" ? notice : null);
               router.refresh();
             }
           });
@@ -546,8 +551,8 @@ export function CompareCandidates({
           setData(null);
           start(async () => {
             const r = await runCompareAllCandidatesAI(vacancyId);
-            if ("error" in r && r.error) {
-              setErr(r.error);
+            if ("error" in r) {
+              setErr(asUserErrorMessage(r.error, "Ошибка"));
               return;
             }
             if ("ok" in r && r.ok && r.data) {
