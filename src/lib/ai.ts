@@ -13,6 +13,11 @@ function resolveLlmConnect(): { apiKey: string; baseURL: string | undefined } {
   return { apiKey, baseURL };
 }
 
+/** Сервер: есть ли любой из поддерживаемых ключей LLM (для UI / диагностики). */
+export function isLlmConfigured(): boolean {
+  return Boolean(resolveLlmConnect().apiKey);
+}
+
 /**
  * Модель по умолчанию: gpt-4o-mini (прямой OpenAI) или openai/gpt-4o-mini (OpenRouter).
  * Для задач приложения нужны стабильный русский, инструкции и JSON — у mini это хорошее соотношение цена/качество.

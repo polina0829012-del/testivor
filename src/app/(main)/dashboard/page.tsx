@@ -7,6 +7,7 @@ import { prisma } from "@/lib/prisma";
 import { DashboardCatalogToggle } from "@/components/dashboard-catalog-toggle";
 import { DashboardStats } from "@/components/dashboard-stats";
 import { PRIORITY_LABEL, STATUS_LABEL } from "@/lib/vacancy-labels";
+import { isLlmConfigured } from "@/lib/ai";
 
 export const dynamic = "force-dynamic";
 
@@ -62,6 +63,7 @@ export default async function DashboardPage({
     byStatus[g.status] = g._count._all;
   }
   const closedCount = byStatus.closed ?? 0;
+  const llmOk = isLlmConfigured();
 
   return (
     <div className="w-full space-y-6 pb-8">
@@ -86,6 +88,22 @@ export default async function DashboardPage({
         closedCount={closedCount}
         byStatus={byStatus}
       />
+
+      <div
+        role="status"
+        className={
+          llmOk
+            ? "rounded-xl border border-emerald-500/25 bg-emerald-500/[0.08] px-4 py-3 text-sm text-emerald-900 dark:border-emerald-400/20 dark:bg-emerald-500/10 dark:text-emerald-100"
+            : "rounded-xl border border-amber-500/30 bg-amber-500/[0.08] px-4 py-3 text-sm text-amber-950 dark:border-amber-400/25 dark:bg-amber-500/10 dark:text-amber-50"
+        }
+      >
+        <p className="font-medium">{llmOk ? "ИИ подключён" : "ИИ не настроен на сервере"}</p>
+        <p className="mt-1 text-xs opacity-90">
+          {llmOk
+            ? "Кнопки «AI: сводка», план, сравнение кандидатов и комментарии по расхождениям используют ваш LLM (OpenRouter / OpenAI-совместимый API)."
+            : "Добавьте в .env или в Vercel переменные OPENAI_API_KEY, OPENROUTER_API_KEY, LLM_API_KEY или AI_API_KEY и при необходимости OPENAI_BASE_URL / OPENAI_MODEL, затем перезапустите dev или Redeploy."}
+        </p>
+      </div>
 
       <section className={catalogShell}>
         <div className="mb-5 flex flex-col gap-4 sm:flex-row sm:items-start sm:justify-between">
