@@ -157,7 +157,7 @@ export function AiButtons({
       </div>
       {err ? <p className="text-xs text-red-600 dark:text-red-400">{err}</p> : null}
       <p className="text-xs text-[hsl(var(--muted))]">
-        Нужны OPENAI_API_KEY и при зеркале — OPENAI_BASE_URL в .env. Запрос к модели может занимать до ~2 минут.
+        Нужен ключ LLM (OPENAI_API_KEY, LLM_API_KEY или OPENROUTER_API_KEY) и при не-OpenAI — OPENAI_BASE_URL. До ~2 минут на ответ.
       </p>
     </div>
   );

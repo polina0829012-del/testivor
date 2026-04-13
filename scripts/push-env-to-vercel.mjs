@@ -153,6 +153,9 @@ async function main() {
 
   const optionalKeys = [
     "OPENAI_API_KEY",
+    "LLM_API_KEY",
+    "AI_API_KEY",
+    "OPENROUTER_API_KEY",
     "OPENAI_BASE_URL",
     "OPENAI_MODEL",
     "OPENROUTER_HTTP_REFERER",
@@ -167,7 +170,13 @@ async function main() {
       entries.push({
         key: k,
         value: v,
-        type: k === "OPENAI_API_KEY" ? "sensitive" : "plain",
+        type:
+          k === "OPENAI_API_KEY" ||
+          k === "LLM_API_KEY" ||
+          k === "AI_API_KEY" ||
+          k === "OPENROUTER_API_KEY"
+            ? "sensitive"
+            : "plain",
       });
     }
   }

@@ -72,9 +72,11 @@ npm.cmd run vercel:push-env
 | `DIRECT_URL`      | опционально: для Prisma migrate; если не задать, при сборке подставится из `DATABASE_URL`. Отдельный direct/host без pooler в Neon — только если миграции с pooled URL падают |
 | `NEXTAUTH_URL`    | после первого деплоя будет `https://ваш-проект.vercel.app` (потом обновите и сделайте **Redeploy**) |
 | `NEXTAUTH_SECRET` | случайная строка, напр. вывод `openssl rand -base64 32` |
-| `OPENAI_API_KEY`  | по желанию, иначе кнопки ИИ будут падать с ошибкой API |
+| `OPENAI_API_KEY`  | по желанию; вместо неё подойдут **`LLM_API_KEY`**, **`AI_API_KEY`** или **`OPENROUTER_API_KEY`** (достаточно одного ключа) |
+| `OPENAI_BASE_URL` | если не OpenAI: OpenRouter — `https://openrouter.ai/api/v1` (при только `OPENROUTER_API_KEY` подставится сам) |
+| `OPENAI_MODEL`    | на OpenRouter часто `openai/gpt-4o-mini`; на прямом OpenAI можно не задавать (дефолт в коде) |
 
-Опционально: `OPENAI_BASE_URL`, `OPENAI_MODEL` (например OpenRouter).
+Кнопки ИИ без ключа будут отвечать ошибкой. Скрипт `vercel:push-env` выгружает и альтернативные имена ключей из `.env`.
 
 Скрипт `npm run vercel:push-env` сам добавляет `DIRECT_URL` (копия `DATABASE_URL`, если в `.env` не задано).
 
@@ -101,7 +103,7 @@ npx prisma db seed
 
 ## 5. Ограничения демо
 
-- Без `OPENAI_API_KEY` не работают вызовы LLM (сводка, план, сравнение кандидатов).
+- Без ключа LLM (`OPENAI_API_KEY` или альтернативы из таблицы выше) не работают вызовы ИИ (сводка, план, сравнение кандидатов).
 - Публичные ссылки интервью: `https://ВАШ_ДОМЕН/interview/<token>` — домен должен совпадать с тем, что видят интервьюеры (обычно тот же Vercel).
 
 Если что-то не собирается, в логах билда Vercel смотрите шаг `prisma migrate deploy` (`DATABASE_URL`, `DIRECT_URL`, SSL — для Neon обычно `?sslmode=require`).

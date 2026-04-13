@@ -7,7 +7,7 @@
 - **Next.js 14** (App Router) + TypeScript + Tailwind
 - **Prisma** + **PostgreSQL** (`DATABASE_URL`; локально — Docker, [Neon](https://neon.tech) и т.п.)
 - **NextAuth** (Credentials, JWT)
-- **OpenAI-compatible API** (`OPENAI_API_KEY`, опционально `OPENAI_BASE_URL`, `OPENAI_MODEL`)
+- **OpenAI-compatible API**: ключ в `OPENAI_API_KEY` или `LLM_API_KEY` / `AI_API_KEY` / `OPENROUTER_API_KEY`; опционально `OPENAI_BASE_URL`, `OPENAI_MODEL` (дефолт — **gpt-4o-mini** или **openai/gpt-4o-mini** на OpenRouter)
 
 ## Быстрый старт
 

@@ -1,9 +1,36 @@
 import OpenAI from "openai";
 
+/** Ключ: OPENAI_API_KEY, или LLM_API_KEY / AI_API_KEY, или только OPENROUTER_API_KEY (тогда baseURL = OpenRouter). */
+function resolveLlmConnect(): { apiKey: string; baseURL: string | undefined } {
+  const openaiKey = process.env.OPENAI_API_KEY?.trim();
+  const genericKey = process.env.LLM_API_KEY?.trim() || process.env.AI_API_KEY?.trim();
+  const routerKey = process.env.OPENROUTER_API_KEY?.trim();
+  const apiKey = openaiKey || genericKey || routerKey || "";
+  let baseURL = process.env.OPENAI_BASE_URL?.trim() || undefined;
+  if (!baseURL && routerKey && !openaiKey) {
+    baseURL = "https://openrouter.ai/api/v1";
+  }
+  return { apiKey, baseURL };
+}
+
+/**
+ * Модель по умолчанию: gpt-4o-mini (прямой OpenAI) или openai/gpt-4o-mini (OpenRouter).
+ * Для задач приложения нужны стабильный русский, инструкции и JSON — у mini это хорошее соотношение цена/качество.
+ */
+function defaultModel(): string {
+  const m = process.env.OPENAI_MODEL?.trim();
+  if (m) return m;
+  const { baseURL } = resolveLlmConnect();
+  return baseURL?.includes("openrouter.ai") ? "openai/gpt-4o-mini" : "gpt-4o-mini";
+}
+
 function client() {
-  const key = process.env.OPENAI_API_KEY;
-  if (!key) throw new Error("OPENAI_API_KEY не задан");
-  const baseURL = process.env.OPENAI_BASE_URL || undefined;
+  const { apiKey, baseURL } = resolveLlmConnect();
+  if (!apiKey) {
+    throw new Error(
+      "Не задан ключ LLM. В .env или Vercel укажите OPENAI_API_KEY (OpenAI или любой OpenAI-совместимый API), либо LLM_API_KEY / AI_API_KEY с тем же токеном, либо OPENROUTER_API_KEY (будет использован https://openrouter.ai/api/v1). Опционально: OPENAI_BASE_URL, OPENAI_MODEL (на OpenRouter часто openai/gpt-4o-mini).",
+    );
+  }
   const defaultHeaders: Record<string, string> = {};
   if (baseURL?.includes("openrouter.ai")) {
     const referer = process.env.OPENROUTER_HTTP_REFERER || process.env.NEXTAUTH_URL || "http://localhost:3000";
@@ -12,7 +39,7 @@ function client() {
     defaultHeaders["X-Title"] = title;
   }
   return new OpenAI({
-    apiKey: key,
+    apiKey,
     baseURL,
     defaultHeaders: Object.keys(defaultHeaders).length ? defaultHeaders : undefined,
     timeout: Number(process.env.OPENAI_TIMEOUT_MS) || 120_000,
@@ -59,7 +86,7 @@ export async function generateInterviewPlan(params: {
 
   const openai = client();
   const completion = await openai.chat.completions.create({
-    model: process.env.OPENAI_MODEL || "gpt-4o-mini",
+    model: defaultModel(),
     response_format: { type: "json_object" },
     messages: [
       {
@@ -92,7 +119,7 @@ export async function suggestInterviewPlanAdditions(params: {
   const extra = vacancyExtraContext(params);
   const openai = client();
   const completion = await openai.chat.completions.create({
-    model: process.env.OPENAI_MODEL || "gpt-4o-mini",
+    model: defaultModel(),
     response_format: { type: "json_object" },
     messages: [
       {
@@ -136,7 +163,7 @@ export async function summarizeCandidate(params: {
 }): Promise<SummaryFromAI> {
   const openai = client();
   const completion = await openai.chat.completions.create({
-    model: process.env.OPENAI_MODEL || "gpt-4o-mini",
+    model: defaultModel(),
     response_format: { type: "json_object" },
     messages: [
       {
@@ -185,7 +212,7 @@ export async function compareAllCandidates(params: {
 }): Promise<CompareAllCandidatesResult> {
   const openai = client();
   const completion = await openai.chat.completions.create({
-    model: process.env.OPENAI_MODEL || "gpt-4o-mini",
+    model: defaultModel(),
     response_format: { type: "json_object" },
     messages: [
       {
@@ -240,7 +267,7 @@ export async function narrateDiscrepancies(params: {
 }): Promise<{ explanations: { blockTitle: string; text: string }[]; tip: string }> {
   const openai = client();
   const completion = await openai.chat.completions.create({
-    model: process.env.OPENAI_MODEL || "gpt-4o-mini",
+    model: defaultModel(),
     response_format: { type: "json_object" },
     messages: [
       {
@@ -267,7 +294,7 @@ export async function regenerateRisksOnly(params: {
 }): Promise<{ risks: string[] }> {
   const openai = client();
   const completion = await openai.chat.completions.create({
-    model: process.env.OPENAI_MODEL || "gpt-4o-mini",
+    model: defaultModel(),
     response_format: { type: "json_object" },
     messages: [
       {
