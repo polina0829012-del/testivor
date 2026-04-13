@@ -27,6 +27,9 @@ yarn-error.log*
 .env
 .env*.local
 
+# Vercel CLI (локальная привязка проекта)
+.vercel
+
 # prisma / sqlite (любые пути)
 **/*.db
 **/*.db-journal
