@@ -181,6 +181,18 @@ async function main() {
     }
   }
 
+  const usesOpenRouter =
+    Boolean(fileEnv.OPENROUTER_API_KEY?.trim()) ||
+    (fileEnv.OPENAI_BASE_URL?.trim() || "").includes("openrouter.ai");
+  if (nextAuthUrl && usesOpenRouter && !fileEnv.OPENROUTER_HTTP_REFERER?.trim()) {
+    entries.push({
+      key: "OPENROUTER_HTTP_REFERER",
+      value: nextAuthUrl,
+      type: "plain",
+    });
+    console.log("OPENROUTER_HTTP_REFERER set from production URL (OpenRouter).");
+  }
+
   const target = ["production", "preview"];
   const body = entries.map((e) => ({
     key: e.key,

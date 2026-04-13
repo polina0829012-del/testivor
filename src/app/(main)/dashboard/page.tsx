@@ -7,7 +7,7 @@ import { prisma } from "@/lib/prisma";
 import { DashboardCatalogToggle } from "@/components/dashboard-catalog-toggle";
 import { DashboardStats } from "@/components/dashboard-stats";
 import { PRIORITY_LABEL, STATUS_LABEL } from "@/lib/vacancy-labels";
-import { isLlmConfigured } from "@/lib/ai";
+import { isLlmConfigured, isVercelDeployment } from "@/lib/ai";
 
 export const dynamic = "force-dynamic";
 
@@ -64,6 +64,7 @@ export default async function DashboardPage({
   }
   const closedCount = byStatus.closed ?? 0;
   const llmOk = isLlmConfigured();
+  const onVercel = isVercelDeployment();
 
   return (
     <div className="w-full space-y-6 pb-8">
@@ -100,8 +101,10 @@ export default async function DashboardPage({
         <p className="font-medium">{llmOk ? "ИИ подключён" : "ИИ не настроен на сервере"}</p>
         <p className="mt-1 text-xs opacity-90">
           {llmOk
-            ? "Кнопки «AI: сводка», план, сравнение кандидатов и комментарии по расхождениям используют ваш LLM (OpenRouter / OpenAI-совместимый API)."
-            : "Добавьте в .env или в Vercel переменные OPENAI_API_KEY, OPENROUTER_API_KEY, LLM_API_KEY или AI_API_KEY и при необходимости OPENAI_BASE_URL / OPENAI_MODEL, затем перезапустите dev или Redeploy."}
+            ? "ИИ выполняется на сервере: любой пользователь, вошедший на этот сайт, использует одни и те же настройки LLM (ваш ключ на хостинге)."
+            : onVercel
+              ? "Сервер Vercel не видит ваш локальный .env. Откройте проект → Settings → Environment Variables → Production: добавьте OPENAI_API_KEY или OPENROUTER_API_KEY, OPENAI_BASE_URL=https://openrouter.ai/api/v1, OPENAI_MODEL=openai/gpt-4o-mini, сохраните и сделайте Redeploy — после этого ИИ заработает у всех по ссылке на приложение."
+              : "Добавьте в .env или .env.local переменные OPENAI_API_KEY, OPENROUTER_API_KEY, LLM_API_KEY или AI_API_KEY и при необходимости OPENAI_BASE_URL / OPENAI_MODEL, затем перезапустите dev."}
         </p>
       </div>
 

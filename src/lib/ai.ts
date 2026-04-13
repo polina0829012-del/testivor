@@ -29,6 +29,25 @@ export function isLlmConfigured(): boolean {
   return Boolean(resolveLlmConnect().apiKey);
 }
 
+/** Сборка/рантайм на Vercel (для подсказок в UI). */
+export function isVercelDeployment(): boolean {
+  return envStr("VERCEL") === "1";
+}
+
+/** Заголовок HTTP-Referer для OpenRouter: прод-URL, иначе localhost. */
+function openRouterHttpReferer(): string {
+  const explicit = envStr("OPENROUTER_HTTP_REFERER");
+  if (explicit) return explicit;
+  const nextAuth = envStr("NEXTAUTH_URL");
+  if (nextAuth) return nextAuth.replace(/\/$/, "");
+  const vercelHost = envStr("VERCEL_URL");
+  if (vercelHost) {
+    const host = vercelHost.replace(/^https?:\/\//, "").split("/")[0] ?? vercelHost;
+    return `https://${host}`;
+  }
+  return "http://localhost:3000";
+}
+
 /**
  * Модель по умолчанию: gpt-4o-mini (прямой OpenAI) или openai/gpt-4o-mini (OpenRouter).
  * Для задач приложения нужны стабильный русский, инструкции и JSON — у mini это хорошее соотношение цена/качество.
@@ -49,7 +68,7 @@ function client() {
   }
   const defaultHeaders: Record<string, string> = {};
   if (baseURL?.includes("openrouter.ai")) {
-    const referer = envStr("OPENROUTER_HTTP_REFERER") || envStr("NEXTAUTH_URL") || "http://localhost:3000";
+    const referer = openRouterHttpReferer();
     const title = envStr("OPENROUTER_APP_TITLE") || "Interview Intelligence Platform";
     defaultHeaders["HTTP-Referer"] = referer;
     defaultHeaders["X-Title"] = title;
