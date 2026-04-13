@@ -78,6 +78,8 @@ npm.cmd run vercel:push-env
 
 Кнопки ИИ без ключа будут отвечать ошибкой. Скрипт `vercel:push-env` выгружает и альтернативные имена ключей из `.env`.
 
+**Ошибка «Не задан ключ LLM» на проде:** локальный `.env` на Vercel не используется. В **Settings → Environment Variables** (Production) добавьте, например для OpenRouter: `OPENAI_API_KEY` (или `OPENROUTER_API_KEY`) = ключ с [openrouter.ai](https://openrouter.ai/), `OPENAI_BASE_URL` = `https://openrouter.ai/api/v1`, `OPENAI_MODEL` = `openai/gpt-4o-mini` — затем **Redeploy**.
+
 Скрипт `npm run vercel:push-env` сам добавляет `DIRECT_URL` (копия `DATABASE_URL`, если в `.env` не задано).
 
 2. **Deploy**. После `npm install` выполняется `postinstall` → `prisma generate`; при сборке — `node scripts/vercel-build.mjs` (миграции + `next build`; без `DIRECT_URL` в панели Vercel он берётся из `DATABASE_URL`). Ветка **Production** в Vercel должна быть **`main`**.

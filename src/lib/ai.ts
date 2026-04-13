@@ -1,12 +1,23 @@
 import OpenAI from "openai";
 
+/**
+ * Чтение env на рантайме через индекс — иначе Next.js может подставить пустое значение
+ * на этапе `next build`, если секретов ещё не было (часто на Vercel до добавления переменных).
+ */
+function envStr(key: string): string | undefined {
+  const v = process.env[key];
+  if (typeof v !== "string") return undefined;
+  const t = v.trim();
+  return t.length > 0 ? t : undefined;
+}
+
 /** Ключ: OPENAI_API_KEY, или LLM_API_KEY / AI_API_KEY, или только OPENROUTER_API_KEY (тогда baseURL = OpenRouter). */
 function resolveLlmConnect(): { apiKey: string; baseURL: string | undefined } {
-  const openaiKey = process.env.OPENAI_API_KEY?.trim();
-  const genericKey = process.env.LLM_API_KEY?.trim() || process.env.AI_API_KEY?.trim();
-  const routerKey = process.env.OPENROUTER_API_KEY?.trim();
+  const openaiKey = envStr("OPENAI_API_KEY");
+  const genericKey = envStr("LLM_API_KEY") || envStr("AI_API_KEY");
+  const routerKey = envStr("OPENROUTER_API_KEY");
   const apiKey = openaiKey || genericKey || routerKey || "";
-  let baseURL = process.env.OPENAI_BASE_URL?.trim() || undefined;
+  let baseURL = envStr("OPENAI_BASE_URL");
   if (!baseURL && routerKey && !openaiKey) {
     baseURL = "https://openrouter.ai/api/v1";
   }
@@ -23,7 +34,7 @@ export function isLlmConfigured(): boolean {
  * Для задач приложения нужны стабильный русский, инструкции и JSON — у mini это хорошее соотношение цена/качество.
  */
 function defaultModel(): string {
-  const m = process.env.OPENAI_MODEL?.trim();
+  const m = envStr("OPENAI_MODEL");
   if (m) return m;
   const { baseURL } = resolveLlmConnect();
   return baseURL?.includes("openrouter.ai") ? "openai/gpt-4o-mini" : "gpt-4o-mini";
@@ -38,8 +49,8 @@ function client() {
   }
   const defaultHeaders: Record<string, string> = {};
   if (baseURL?.includes("openrouter.ai")) {
-    const referer = process.env.OPENROUTER_HTTP_REFERER || process.env.NEXTAUTH_URL || "http://localhost:3000";
-    const title = process.env.OPENROUTER_APP_TITLE || "Interview Intelligence Platform";
+    const referer = envStr("OPENROUTER_HTTP_REFERER") || envStr("NEXTAUTH_URL") || "http://localhost:3000";
+    const title = envStr("OPENROUTER_APP_TITLE") || "Interview Intelligence Platform";
     defaultHeaders["HTTP-Referer"] = referer;
     defaultHeaders["X-Title"] = title;
   }
@@ -47,7 +58,7 @@ function client() {
     apiKey,
     baseURL,
     defaultHeaders: Object.keys(defaultHeaders).length ? defaultHeaders : undefined,
-    timeout: Number(process.env.OPENAI_TIMEOUT_MS) || 120_000,
+    timeout: Number(envStr("OPENAI_TIMEOUT_MS")) || 120_000,
     maxRetries: 1,
   });
 }
