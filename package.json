@@ -25,7 +25,8 @@
     "vercel:push-env": "node scripts/push-env-to-vercel.mjs",
     "vercel:sync-env-cli": "node scripts/sync-env-vercel-cli.mjs",
     "vercel:deploy": "node scripts/trigger-vercel-deploy.mjs",
-    "vercel:print-url": "node scripts/fetch-vercel-production-url.mjs"
+    "vercel:print-url": "node scripts/fetch-vercel-production-url.mjs",
+    "prompts:export": "node scripts/build-prompts-all.mjs"
   },
   "dependencies": {
     "@prisma/client": "^6.5.0",

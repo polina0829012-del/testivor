@@ -8,7 +8,7 @@
 |-----|--------|
 | **Работающее приложение (production)** | [https://testivor.vercel.app](https://testivor.vercel.app) |
 | **Репозиторий (GitHub, ветка `main`)** | [https://github.com/polina0829012-del/testivor](https://github.com/polina0829012-del/testivor) |
-| **История промптов к AI-агенту** | [prompts.md](./prompts.md) |
+| **История промптов к AI-агенту** | [prompts.md](./prompts.md) (оглавление) · **[PROMPTS_ALL.md](./PROMPTS_ALL.md)** (полная выгрузка, ~197 сообщений) |
 
 После сида локально или на той же БД, что у продакшена: вход **demo@demo.com** / **demo123** (см. раздел «Быстрый старт»).
 
@@ -106,4 +106,4 @@ HR создаёт вакансию и план интервью (вручную 
 
 ## История промптов к AI-агенту
 
-Файл **[prompts.md](./prompts.md)** — требуется для сдачи вместе с этим README.
+Файлы **[prompts.md](./prompts.md)** и **[PROMPTS_ALL.md](./PROMPTS_ALL.md)** — история промптов для сдачи (кратко и полный лог). Пересборка полного лога: `node scripts/build-prompts-all.mjs`.
