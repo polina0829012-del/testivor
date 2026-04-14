@@ -12,28 +12,22 @@
 ## Быстрый старт
 
 1. Установите [Node.js](https://nodejs.org/) LTS.
-2. Окружение:
-
-   - В корне файл **`.env`** с `DATABASE_URL` (PostgreSQL) и `NEXTAUTH_*`.
-   - Секреты ИИ можно держать в **`.env.local`** — Next.js подхватывает оба файла.
-
-   Если `.env` ещё нет: скопируйте `.env.example` в `.env`, укажите строку подключения к Postgres и `NEXTAUTH_SECRET` (например `openssl rand -base64 32`).
-
-3. Установите зависимости и базу:
+2. Зависимости: `npm install`.
+3. **Самый простой локальный вариант** (нужен [Docker Desktop](https://www.docker.com/products/docker-desktop/)) — одна команда поднимает Postgres, создаст/починит `.env`, миграции и сид:
 
    ```bash
-   npm install
-   npx prisma migrate deploy
-   npm run db:seed
+   npm run bootstrap
    ```
-
-   После **изменений в `schema.prisma`**: `npx prisma migrate dev --name описание` (локально), затем закоммитьте папку `prisma/migrations`.
 
 4. Запуск:
 
    ```bash
    npm run dev
    ```
+
+   Без Docker: в корне файл **`.env`** с реальным `DATABASE_URL` (Neon и т.д.) и `NEXTAUTH_SECRET`. Можно скопировать `.env.example` → `.env` и заполнить вручную, затем `npx prisma migrate deploy` и `npm run db:seed`.
+
+   После **изменений в `schema.prisma`**: `npx prisma migrate dev --name описание` (локально), затем закоммитьте папку `prisma/migrations`.
 
 5. Откройте [http://localhost:3000](http://localhost:3000). Демо-аккаунт после сида: **demo@demo.com** / **demo123**. Пригласительные ссылки для протоколов: токены `invite-demo-maria`, `invite-demo-oleg`, `invite-demo-irina` (см. карточку кандидата или `prisma/seed.ts`).
 

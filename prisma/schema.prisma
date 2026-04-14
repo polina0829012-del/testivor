@@ -16,6 +16,8 @@ model User {
   name         String?
   createdAt    DateTime  @default(now())
   vacancies    Vacancy[]
+  /// Вопросы, внесённые в общий банк для коллег
+  sharedBankQuestions QuestionBankTemplateQuestion[]
 }
 
 model Vacancy {
@@ -38,6 +40,9 @@ model Vacancy {
   workFormat               String      @default("")
   planUpdatedAt            DateTime    @default(now())
   createdAt                DateTime    @default(now())
+  /// Кандидат, зафиксированный при закрытии вакансии (трудоустройство)
+  hiredCandidateId         String?     @unique
+  hiredCandidate           Candidate?  @relation("VacancyHiredCandidate", fields: [hiredCandidateId], references: [id], onDelete: SetNull)
   blocks                   PlanBlock[]
   candidates               Candidate[]
 }
@@ -68,6 +73,7 @@ model Candidate {
   id                 String         @id @default(cuid())
   vacancyId          String
   vacancy            Vacancy        @relation(fields: [vacancyId], references: [id], onDelete: Cascade)
+  hiredOnVacancy     Vacancy?       @relation("VacancyHiredCandidate")
   name               String
   summaryJson        String?
   risksJson          String?
@@ -113,8 +119,51 @@ model BlockScore {
   protocol    Protocol  @relation(fields: [protocolId], references: [id], onDelete: Cascade)
   planBlockId String
   planBlock   PlanBlock @relation(fields: [planBlockId], references: [id], onDelete: Cascade)
-  score       Int
-  notes       String    @default("")
+  /// Итоговая оценка блока от интервьюера (1–5); для расхождений между интервьюерами и для ИИ
+  overallScore Int
+  /// Среднее по балльным пунктам плана в блоке (округление 1–5); при отсутствии балльных вопросов — 3
+  score        Int
+  notes        String @default("")
 
   @@unique([protocolId, planBlockId])
+}
+
+/// Направление собеседования (фильтр в банке вопросов)
+model QuestionBankDirection {
+  id        String                    @id @default(cuid())
+  slug      String                    @unique
+  label     String
+  sortOrder Int                       @default(0)
+  blocks    QuestionBankTemplateBlock[]
+}
+
+/// Блок внутри направления (встроенный или созданный из вкладов коллег)
+model QuestionBankTemplateBlock {
+  id          String   @id @default(cuid())
+  directionId String
+  direction   QuestionBankDirection @relation(fields: [directionId], references: [id], onDelete: Cascade)
+  /// Для встроенных блоков (intro, hard-skills, …) — стабильный ключ; у блоков от HR — null
+  sourceKey   String?
+  title       String
+  required    Boolean  @default(false)
+  sortOrder   Int      @default(0)
+  questions   QuestionBankTemplateQuestion[]
+
+  @@unique([directionId, sourceKey])
+  @@index([directionId])
+}
+
+model QuestionBankTemplateQuestion {
+  id                  String   @id @default(cuid())
+  blockId             String
+  block               QuestionBankTemplateBlock @relation(fields: [blockId], references: [id], onDelete: Cascade)
+  text                String
+  sortOrder           Int      @default(0)
+  /// text | rating — как в PlanQuestion
+  responseType        String   @default("text")
+  contributedByUserId String?
+  contributedBy       User?    @relation(fields: [contributedByUserId], references: [id], onDelete: SetNull)
+  createdAt           DateTime @default(now())
+
+  @@index([blockId])
 }

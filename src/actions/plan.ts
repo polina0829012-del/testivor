@@ -3,7 +3,6 @@
 import { revalidatePath } from "next/cache";
 import { prisma } from "@/lib/prisma";
 import { assertVacancyOwner, requireUserId } from "@/actions/guards";
-import { QUESTION_BANK_BLOCKS } from "@/lib/question-bank";
 import type { PlanFromAI } from "@/lib/ai";
 import { parseQuestionResponseType } from "@/lib/plan-question-types";
 
@@ -122,6 +121,61 @@ export async function deletePlanBlock(blockId: string, vacancyId: string) {
   return { ok: true as const };
 }
 
+/** Установить порядок блоков по массиву id (должен совпадать с блоками вакансии). */
+export async function reorderPlanBlocks(vacancyId: string, orderedBlockIds: string[]) {
+  const userId = await requireUserId();
+  await assertVacancyOwner(vacancyId, userId);
+  const blocks = await prisma.planBlock.findMany({
+    where: { vacancyId },
+    select: { id: true },
+    orderBy: { sortOrder: "asc" },
+  });
+  const ids = blocks.map((b) => b.id);
+  if (orderedBlockIds.length !== ids.length) return { error: "Неверный список блоков." };
+  const set = new Set(ids);
+  for (const id of orderedBlockIds) {
+    if (!set.has(id)) return { error: "Неверный блок в списке." };
+  }
+  await prisma.$transaction(
+    orderedBlockIds.map((id, i) => prisma.planBlock.update({ where: { id }, data: { sortOrder: i } })),
+  );
+  await prisma.vacancy.update({
+    where: { id: vacancyId },
+    data: { planUpdatedAt: new Date() },
+  });
+  revalidatePath(`/vacancies/${vacancyId}`);
+  return { ok: true as const };
+}
+
+export async function movePlanQuestion(questionId: string, vacancyId: string, direction: "up" | "down") {
+  const userId = await requireUserId();
+  await assertVacancyOwner(vacancyId, userId);
+  const q = await prisma.planQuestion.findFirst({
+    where: { id: questionId, block: { vacancyId } },
+    select: { id: true, blockId: true },
+  });
+  if (!q) return { error: "Вопрос не найден." };
+  const qs = await prisma.planQuestion.findMany({
+    where: { blockId: q.blockId },
+    orderBy: { sortOrder: "asc" },
+    select: { id: true },
+  });
+  const idx = qs.findIndex((x) => x.id === questionId);
+  const j = direction === "up" ? idx - 1 : idx + 1;
+  if (j < 0 || j >= qs.length) return { ok: true as const };
+  const next = [...qs];
+  [next[idx], next[j]] = [next[j], next[idx]];
+  await prisma.$transaction(
+    next.map((row, i) => prisma.planQuestion.update({ where: { id: row.id }, data: { sortOrder: i } })),
+  );
+  await prisma.vacancy.update({
+    where: { id: vacancyId },
+    data: { planUpdatedAt: new Date() },
+  });
+  revalidatePath(`/vacancies/${vacancyId}`);
+  return { ok: true as const };
+}
+
 export async function addQuestion(blockId: string, vacancyId: string) {
   const userId = await requireUserId();
   await assertVacancyOwner(vacancyId, userId);
@@ -229,33 +283,63 @@ export async function appendPlanFromAI(vacancyId: string, plan: PlanFromAI) {
   return { ok: true as const };
 }
 
-export async function importQuestionBankBlocks(vacancyId: string, bankBlockIds: string[]) {
+/** Добавить в конец плана выбранные вопросы из общего банка (группируются по блокам банка). */
+export async function importQuestionBankQuestionIds(vacancyId: string, bankQuestionIds: string[]) {
   const userId = await requireUserId();
   await assertVacancyOwner(vacancyId, userId);
-  const picked = QUESTION_BANK_BLOCKS.filter((b) => bankBlockIds.includes(b.id));
-  if (picked.length === 0) return { error: "Выберите хотя бы один блок из банка." };
+  const unique = Array.from(new Set(bankQuestionIds.filter(Boolean)));
+  if (unique.length === 0) return { error: "Отметьте хотя бы один вопрос." };
+
+  const rows = await prisma.questionBankTemplateQuestion.findMany({
+    where: { id: { in: unique } },
+    include: { block: { include: { direction: true } } },
+  });
+  if (rows.length === 0) return { error: "Вопросы не найдены." };
+
+  rows.sort((a, b) => {
+    const da = a.block.direction.sortOrder - b.block.direction.sortOrder;
+    if (da !== 0) return da;
+    const ba = a.block.sortOrder - b.block.sortOrder;
+    if (ba !== 0) return ba;
+    return a.sortOrder - b.sortOrder;
+  });
+
+  const blockOrder: string[] = [];
+  for (const r of rows) {
+    if (!blockOrder.includes(r.blockId)) blockOrder.push(r.blockId);
+  }
+
   const max = await prisma.planBlock.aggregate({
     where: { vacancyId },
     _max: { sortOrder: true },
   });
   let sortOrder = (max._max.sortOrder ?? -1) + 1;
-  for (const b of picked) {
+
+  for (const bid of blockOrder) {
+    const inBlock = rows
+      .filter((r) => r.blockId === bid)
+      .sort((a, b) => a.sortOrder - b.sortOrder);
+    if (inBlock.length === 0) continue;
+    const bankBlock = inBlock[0].block;
+    const fullCount = await prisma.questionBankTemplateQuestion.count({ where: { blockId: bid } });
+    const partial = inBlock.length < fullCount;
     await prisma.planBlock.create({
       data: {
         vacancyId,
-        title: b.title,
+        title: bankBlock.title,
         sortOrder: sortOrder++,
-        required: b.required,
+        required: partial ? false : bankBlock.required,
         questions: {
-          create: b.questions.map((q, j) => ({
+          create: inBlock.map((q, j) => ({
             text: q.text,
             sortOrder: j,
-            responseType: "text",
+            responseType: q.responseType === "rating" ? "rating" : "text",
           })),
         },
       },
     });
   }
+
   await prisma.vacancy.update({
     where: { id: vacancyId },
     data: { planUpdatedAt: new Date() },

@@ -2,10 +2,11 @@ import { getServerSession } from "next-auth";
 import { NextResponse } from "next/server";
 import { authOptions } from "@/lib/auth-options";
 import { prisma } from "@/lib/prisma";
-import { blockHasRatingQuestions } from "@/lib/block-scores";
+import { blockHasRatingQuestions, effectiveBlockOverall } from "@/lib/block-scores";
 import { computeDiscrepancies } from "@/lib/discrepancies";
 import { recommendationLabelRu } from "@/lib/recommendation-labels";
-import { candidateAvgScore, candidateDisplayName } from "@/lib/stats";
+import { aggregateVacancyBlockOverallScores } from "@/lib/overall-block-score-agg";
+import { candidateDisplayName } from "@/lib/stats";
 
 function esc(s: string) {
   return `"${s.replace(/"/g, '""')}"`;
@@ -37,6 +38,15 @@ export async function GET(
   });
   if (!v) return new NextResponse("Not found", { status: 404 });
 
+  const blockScoreRows = await prisma.blockScore.findMany({
+    where: { planBlock: { vacancyId: v.id } },
+    select: {
+      score: true,
+      protocol: { select: { interviewer: { select: { candidateId: true } } } },
+    },
+  });
+  const { avgByCandidateId } = aggregateVacancyBlockOverallScores(blockScoreRows);
+
   const blocks = v.blocks.map((b) => ({
     id: b.id,
     title: b.title,
@@ -54,16 +64,17 @@ export async function GET(
   ];
 
   for (const c of v.candidates) {
-    const avg = candidateAvgScore(c);
+    const avg = avgByCandidateId[c.id];
     const protocols = c.interviewers
       .filter((i) => i.protocol)
       .map((i) => ({
         interviewerName: i.name,
         scores:
-          i.protocol?.scores.map((s) => ({
+          (i.protocol?.scores ?? []).map((s) => ({
             planBlockId: s.planBlockId,
-            score: s.score,
-          })) ?? [],
+            overallScore: effectiveBlockOverall(s),
+            rubricDerivedScore: s.score,
+          })),
       }));
     const disc = computeDiscrepancies(blocks, protocols);
     let rec = "";
@@ -85,7 +96,7 @@ export async function GET(
     }
     rows.push([
       candidateDisplayName(c.name),
-      avg != null ? String(avg) : "",
+      avg !== undefined ? String(avg) : "",
       disc.map((d) => d.blockTitle).join("; "),
       rec,
       strengths,

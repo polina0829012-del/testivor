@@ -1,4 +1,4 @@
-import { blockHasRatingQuestions } from "@/lib/block-scores";
+import { blockHasRatingQuestions, effectiveBlockOverall } from "@/lib/block-scores";
 import { computeDiscrepancies } from "@/lib/discrepancies";
 import type { Prisma } from "@prisma/client";
 
@@ -25,10 +25,12 @@ export type VacancyWithRelations = Prisma.VacancyGetPayload<{
 
 export function vacancyKpi(v: VacancyWithRelations) {
   const candidateCount = v.candidates.length;
+  const blockCount = v.blocks.length;
   let withDisc = 0;
-  let sumAvg = 0;
-  let avgCount = 0;
   const recCount = { hire: 0, reject: 0, additional: 0, none: 0 };
+  let fullyCompleteCandidates = 0;
+  let sumReadinessSlotPct = 0;
+  let readinessSlotDenom = 0;
 
   const blocks = v.blocks.map((b) => ({
     id: b.id,
@@ -37,32 +39,26 @@ export function vacancyKpi(v: VacancyWithRelations) {
   }));
 
   for (const c of v.candidates) {
+    const readiness = candidateReadiness(c, blockCount);
+    if (readiness.complete) fullyCompleteCandidates++;
+    if (readiness.total > 0) {
+      sumReadinessSlotPct += (readiness.done / readiness.total) * 100;
+      readinessSlotDenom++;
+    }
+
     const protocols = c.interviewers
-      .filter((i) => i.protocol && i.protocol.scores.length > 0)
+      .filter((i) => (i.protocol?.scores?.length ?? 0) > 0)
       .map((i) => ({
         interviewerName: i.name,
         scores:
-          i.protocol?.scores.map((s) => ({
+          (i.protocol?.scores ?? []).map((s) => ({
             planBlockId: s.planBlockId,
-            score: s.score,
-          })) ?? [],
+            overallScore: effectiveBlockOverall(s),
+            rubricDerivedScore: s.score,
+          })),
       }));
     const disc = computeDiscrepancies(blocks, protocols);
     if (disc.length > 0) withDisc++;
-
-    const ratings: number[] = [];
-    for (const i of c.interviewers) {
-      for (const a of i.protocol?.questionAnswers ?? []) {
-        if (a.scoreAnswer != null && a.scoreAnswer >= 1 && a.scoreAnswer <= 5) {
-          ratings.push(a.scoreAnswer);
-        }
-      }
-    }
-    if (ratings.length > 0) {
-      const avg = ratings.reduce((a, b) => a + b, 0) / ratings.length;
-      sumAvg += avg;
-      avgCount++;
-    }
 
     if (c.summaryJson) {
       try {
@@ -83,30 +79,42 @@ export function vacancyKpi(v: VacancyWithRelations) {
   return {
     candidateCount,
     withDiscrepancies: withDisc,
-    avgScoreAcrossCandidates: avgCount ? Math.round((sumAvg / avgCount) * 10) / 10 : null,
     recommendations: recCount,
+    readiness: {
+      fullyCompleteCandidates,
+      avgSlotPercentAcrossCandidates: readinessSlotDenom
+        ? Math.round(sumReadinessSlotPct / readinessSlotDenom)
+        : null,
+    },
   };
 }
 
-export function candidateAvgScore(
-  c: VacancyWithRelations["candidates"][number],
-): number | null {
-  const ratings: number[] = [];
+/**
+ * Данные для среднего балла по оценкам блоков во всех сданных протоколах (`effectiveBlockOverall`).
+ */
+export type CandidateInterviewersForAvg = {
+  interviewers: {
+    protocol?: { scores?: { overallScore?: number | null; score: number }[] | null } | null;
+  }[];
+};
+
+/** Среднее по всем оценкам блоков во всех протоколах кандидата (1–5). */
+export function candidateAvgScore(c: CandidateInterviewersForAvg): number | null {
+  const vals: number[] = [];
   for (const i of c.interviewers) {
-    for (const a of i.protocol?.questionAnswers ?? []) {
-      if (a.scoreAnswer != null && a.scoreAnswer >= 1 && a.scoreAnswer <= 5) {
-        ratings.push(a.scoreAnswer);
-      }
+    for (const s of i.protocol?.scores ?? []) {
+      const n = effectiveBlockOverall(s);
+      if (n >= 1 && n <= 5) vals.push(n);
     }
   }
-  if (ratings.length === 0) return null;
-  return Math.round((ratings.reduce((a, b) => a + b, 0) / ratings.length) * 10) / 10;
+  if (vals.length === 0) return null;
+  return Math.round((vals.reduce((a, b) => a + b, 0) / vals.length) * 10) / 10;
 }
 
 export function candidateReadiness(c: VacancyWithRelations["candidates"][number], blockCount: number) {
   const total = c.interviewers.length;
   const done = c.interviewers.filter(
-    (i) => i.protocol?.submittedAt && (i.protocol.scores.length ?? 0) >= blockCount,
+    (i) => i.protocol?.submittedAt && (i.protocol.scores?.length ?? 0) >= blockCount,
   ).length;
   return { done, total, complete: total > 0 && done === total };
 }

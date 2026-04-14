@@ -102,9 +102,9 @@ export function CreateVacancyForm() {
             id="new-vacancy-competencies"
             name="competencies"
             required
-            rows={7}
+            rows={3}
             placeholder="Навыки и опыт (SQL, продуктовая аналитика…), ожидания по уровню, стиль работы, пожелания заказчика, онбординг, особенности команды…"
-            className={`${fieldBase} bg-white/90 dark:bg-black/40`}
+            className={fieldBase}
           />
         </section>
 
@@ -152,7 +152,7 @@ export function CreateVacancyForm() {
                 <option value="draft">Черновик</option>
                 <option value="active">В работе</option>
                 <option value="on_hold">Пауза</option>
-                <option value="closed">Закрыта</option>
+                <option value="closed">Деактивирована</option>
               </select>
             </div>
             <div className="sm:col-span-2 xl:col-span-1">

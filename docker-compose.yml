@@ -1,0 +1,20 @@
+# Локальная PostgreSQL для разработки: npm run bootstrap
+services:
+  postgres:
+    image: postgres:16-alpine
+    ports:
+      - "5433:5432"
+    environment:
+      POSTGRES_USER: testivor
+      POSTGRES_PASSWORD: testivor
+      POSTGRES_DB: testivor
+    volumes:
+      - testivor_pg_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U testivor -d testivor"]
+      interval: 2s
+      timeout: 5s
+      retries: 30
+
+volumes:
+  testivor_pg_data:

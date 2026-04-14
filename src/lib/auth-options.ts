@@ -3,7 +3,11 @@ import CredentialsProvider from "next-auth/providers/credentials";
 import bcrypt from "bcryptjs";
 import { prisma } from "@/lib/prisma";
 
-export const authOptions: NextAuthOptions = {
+/** trustHost поддерживается рантаймом NextAuth; в @types/next-auth может отсутствовать в AuthOptions. */
+export const authOptions = {
+  /** Локально: не ломать вход, если открыли другой порт (3001, 3004) или 127.0.0.1 вместо localhost. */
+  trustHost: true,
+  secret: process.env.NEXTAUTH_SECRET,
   session: { strategy: "jwt", maxAge: 30 * 24 * 60 * 60 },
   pages: { signIn: "/login" },
   providers: [
@@ -14,12 +18,16 @@ export const authOptions: NextAuthOptions = {
         password: { label: "Пароль", type: "password" },
       },
       async authorize(credentials) {
-        if (!credentials?.email || !credentials?.password) return null;
+        const emailRaw = credentials?.email;
+        const passwordRaw = credentials?.password;
+        if (typeof emailRaw !== "string" || typeof passwordRaw !== "string") return null;
+        const email = emailRaw.trim().toLowerCase();
+        if (!email || !passwordRaw) return null;
         const user = await prisma.user.findUnique({
-          where: { email: credentials.email.trim().toLowerCase() },
+          where: { email },
         });
         if (!user) return null;
-        const ok = await bcrypt.compare(credentials.password, user.passwordHash);
+        const ok = await bcrypt.compare(passwordRaw, user.passwordHash);
         if (!ok) return null;
         return { id: user.id, email: user.email, name: user.name ?? undefined };
       },
@@ -35,4 +43,4 @@ export const authOptions: NextAuthOptions = {
       return session;
     },
   },
-};
+} as NextAuthOptions;

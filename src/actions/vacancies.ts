@@ -1,8 +1,9 @@
 "use server";
 
 import { revalidatePath } from "next/cache";
+import { redirect } from "next/navigation";
 import { prisma } from "@/lib/prisma";
-import { assertVacancyOwner, requireUserId } from "@/actions/guards";
+import { assertVacancyOwner, requireUserId, STALE_SESSION_PREFIX } from "@/actions/guards";
 import { mergedVacancyProfile } from "@/lib/vacancy-profile";
 import { z } from "zod";
 
@@ -25,8 +26,24 @@ const vacancyFieldsSchema = z.object({
 
 export type CreateVacancyResult = { error: string } | { ok: true; id: string };
 
+function authErrorFromCatch(e: unknown): string | null {
+  if (!(e instanceof Error)) return null;
+  if (e.message === "UNAUTHORIZED") return "Войдите в аккаунт.";
+  if (e.message.startsWith(STALE_SESSION_PREFIX)) {
+    return e.message.slice(STALE_SESSION_PREFIX.length).trim();
+  }
+  return null;
+}
+
 export async function createVacancy(formData: FormData): Promise<CreateVacancyResult> {
-  const userId = await requireUserId();
+  let userId: string;
+  try {
+    userId = await requireUserId();
+  } catch (e) {
+    const msg = authErrorFromCatch(e);
+    if (msg) return { error: msg };
+    throw e;
+  }
   const parsed = vacancyFieldsSchema.safeParse({
     title: formData.get("title"),
     level: formData.get("level"),
@@ -73,6 +90,7 @@ export async function updateVacancyMeta(vacancyId: string, formData: FormData) {
       expectationsForCandidate: "",
       targetCloseDate,
       planUpdatedAt: new Date(),
+      ...(parsed.data.status !== "closed" ? { hiredCandidateId: null } : {}),
     },
   });
   revalidatePath(`/vacancies/${vacancyId}`);
@@ -81,7 +99,14 @@ export async function updateVacancyMeta(vacancyId: string, formData: FormData) {
 }
 
 export async function duplicateVacancy(vacancyId: string) {
-  const userId = await requireUserId();
+  let userId: string;
+  try {
+    userId = await requireUserId();
+  } catch (e) {
+    const msg = authErrorFromCatch(e);
+    if (msg) return { error: msg };
+    throw e;
+  }
   const v = await prisma.vacancy.findFirst({
     where: { id: vacancyId, userId },
     include: {
@@ -124,6 +149,52 @@ export async function duplicateVacancy(vacancyId: string) {
   });
   revalidatePath("/dashboard");
   return { ok: true as const, id: copy.id };
+}
+
+/** Закрыть вакансию и опционально зафиксировать кандидата на трудоустройство. */
+export async function closeVacancyWithOptionalHire(vacancyId: string, formData: FormData) {
+  const userId = await requireUserId();
+  await assertVacancyOwner(vacancyId, userId);
+  const raw = formData.get("hiredCandidateId");
+  const candidateId =
+    typeof raw === "string" && raw.trim().length > 0 ? raw.trim() : null;
+  if (candidateId) {
+    const belongs = await prisma.candidate.findFirst({
+      where: { id: candidateId, vacancyId },
+      select: { id: true },
+    });
+    if (!belongs) {
+      redirect(`/vacancies/${vacancyId}?closeVacancyError=invalid_candidate`);
+    }
+  }
+  await prisma.vacancy.update({
+    where: { id: vacancyId },
+    data: {
+      status: "closed",
+      hiredCandidateId: candidateId,
+      planUpdatedAt: new Date(),
+    },
+  });
+  revalidatePath(`/vacancies/${vacancyId}`);
+  revalidatePath("/dashboard");
+  redirect(`/vacancies/${vacancyId}?saved=1`);
+}
+
+/** Вернуть закрытую вакансию в работу (сброс найма и статус «В работе»). */
+export async function reopenVacancyToActive(vacancyId: string) {
+  const userId = await requireUserId();
+  await assertVacancyOwner(vacancyId, userId);
+  await prisma.vacancy.update({
+    where: { id: vacancyId },
+    data: {
+      status: "active",
+      hiredCandidateId: null,
+      planUpdatedAt: new Date(),
+    },
+  });
+  revalidatePath(`/vacancies/${vacancyId}`);
+  revalidatePath("/dashboard");
+  redirect(`/vacancies/${vacancyId}?saved=1`);
 }
 
 export async function deleteVacancy(vacancyId: string) {

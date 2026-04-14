@@ -1,5 +1,6 @@
 "use server";
 
+import { redirect } from "next/navigation";
 import {
   addPlanBlock,
   addQuestion,
@@ -13,11 +14,14 @@ import {
 import { updateVacancyMeta } from "@/actions/vacancies";
 
 export async function submitVacancyMeta(vacancyId: string, formData: FormData): Promise<void> {
-  await updateVacancyMeta(vacancyId, formData);
+  const r = await updateVacancyMeta(vacancyId, formData);
+  if ("error" in r) return;
+  redirect(`/vacancies/${vacancyId}?saved=1`);
 }
 
 export async function submitSaveInterviewPlan(vacancyId: string, formData: FormData): Promise<void> {
   await saveInterviewPlanContent(vacancyId, formData);
+  redirect(`/vacancies/${vacancyId}?saved=1`);
 }
 
 export async function submitBlockTitle(formData: FormData): Promise<void> {

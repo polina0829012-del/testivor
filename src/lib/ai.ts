@@ -1,4 +1,4 @@
-import OpenAI from "openai";
+import OpenAI, { APIError } from "openai";
 
 /**
  * Чтение env на рантайме через индекс — иначе Next.js может подставить пустое значение
@@ -82,6 +82,53 @@ function client() {
   });
 }
 
+type JsonChatParams = Omit<
+  OpenAI.Chat.Completions.ChatCompletionCreateParamsNonStreaming,
+  "response_format" | "stream"
+>;
+
+function jsonModeDisabledByEnv(): boolean {
+  return envStr("OPENAI_DISABLE_JSON_MODE") === "true";
+}
+
+/** OpenRouter и часть моделей отвечают 400, если не поддерживают response_format: json_object. */
+function isLikelyJsonModeUnsupported400(e: unknown): boolean {
+  if (!(e instanceof APIError) || e.status !== 400) return false;
+  const t = e.message.toLowerCase();
+  return (
+    t.includes("provider returned") ||
+    t.includes("response_format") ||
+    t.includes("json_object") ||
+    t.includes("json mode") ||
+    (t.includes("unsupported") && t.includes("json"))
+  );
+}
+
+/**
+ * Запрос с JSON mode; при 400 из‑за провайдера — повтор без response_format (промпт всё равно требует JSON).
+ * OPENAI_DISABLE_JSON_MODE=true — сразу без JSON mode.
+ */
+async function chatCompletionExpectJson(
+  openai: OpenAI,
+  params: JsonChatParams,
+): Promise<OpenAI.Chat.Completions.ChatCompletion> {
+  const body = { ...params, stream: false as const };
+  if (jsonModeDisabledByEnv()) {
+    return openai.chat.completions.create(body);
+  }
+  try {
+    return await openai.chat.completions.create({
+      ...body,
+      response_format: { type: "json_object" },
+    });
+  } catch (e) {
+    if (isLikelyJsonModeUnsupported400(e)) {
+      return openai.chat.completions.create(body);
+    }
+    throw e;
+  }
+}
+
 function vacancyExtraContext(params: { workFormat?: string; targetCloseDateLabel?: string }) {
   return [
     params.workFormat?.trim() ? `Формат работы: ${params.workFormat.trim()}` : "",
@@ -120,9 +167,8 @@ export async function generateInterviewPlan(params: {
   const extra = vacancyExtraContext(params);
 
   const openai = client();
-  const completion = await openai.chat.completions.create({
+  const completion = await chatCompletionExpectJson(openai, {
     model: defaultModel(),
-    response_format: { type: "json_object" },
     messages: [
       {
         role: "system",
@@ -153,9 +199,8 @@ export async function suggestInterviewPlanAdditions(params: {
 }): Promise<PlanFromAI> {
   const extra = vacancyExtraContext(params);
   const openai = client();
-  const completion = await openai.chat.completions.create({
+  const completion = await chatCompletionExpectJson(openai, {
     model: defaultModel(),
-    response_format: { type: "json_object" },
     messages: [
       {
         role: "system",
@@ -197,9 +242,8 @@ export async function summarizeCandidate(params: {
   protocolsText: string;
 }): Promise<SummaryFromAI> {
   const openai = client();
-  const completion = await openai.chat.completions.create({
+  const completion = await chatCompletionExpectJson(openai, {
     model: defaultModel(),
-    response_format: { type: "json_object" },
     messages: [
       {
         role: "system",
@@ -246,9 +290,8 @@ export async function compareAllCandidates(params: {
   candidatesBundle: string;
 }): Promise<CompareAllCandidatesResult> {
   const openai = client();
-  const completion = await openai.chat.completions.create({
+  const completion = await chatCompletionExpectJson(openai, {
     model: defaultModel(),
-    response_format: { type: "json_object" },
     messages: [
       {
         role: "system",
@@ -301,16 +344,15 @@ export async function narrateDiscrepancies(params: {
   protocolsText: string;
 }): Promise<{ explanations: { blockTitle: string; text: string }[]; tip: string }> {
   const openai = client();
-  const completion = await openai.chat.completions.create({
+  const completion = await chatCompletionExpectJson(openai, {
     model: defaultModel(),
-    response_format: { type: "json_object" },
     messages: [
       {
         role: "system",
         content: `По расхождениям оценок и заметкам дай JSON: {
   "explanations": [ { "blockTitle": string, "text": string } ],
   "tip": string (одна рекомендация HR)
-} На русском.`,
+} На русском. В JSON расхождений сравниваются **общие оценки блока** интервьюеров (overallScore); при наличии поля rubricDerivedScore учитывай и расхождение «общее мнение vs среднее по балльным пунктам» внутри одного интервьюера.`,
       },
       {
         role: "user",
@@ -321,28 +363,4 @@ export async function narrateDiscrepancies(params: {
   const raw = completion.choices[0]?.message?.content;
   if (!raw) throw new Error("Пустой ответ модели");
   return JSON.parse(raw) as { explanations: { blockTitle: string; text: string }[]; tip: string };
-}
-
-export async function regenerateRisksOnly(params: {
-  protocolsText: string;
-  previousRisks: string[];
-}): Promise<{ risks: string[] }> {
-  const openai = client();
-  const completion = await openai.chat.completions.create({
-    model: defaultModel(),
-    response_format: { type: "json_object" },
-    messages: [
-      {
-        role: "system",
-        content: 'Верни JSON { "risks": string[] } — только риски по заметкам, 3–6 пунктов, русский.',
-      },
-      {
-        role: "user",
-        content: `Было рисков: ${JSON.stringify(params.previousRisks)}.\n\nЗаметки:\n${params.protocolsText}`,
-      },
-    ],
-  });
-  const raw = completion.choices[0]?.message?.content;
-  if (!raw) throw new Error("Пустой ответ модели");
-  return JSON.parse(raw) as { risks: string[] };
 }

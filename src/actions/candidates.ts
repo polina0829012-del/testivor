@@ -47,7 +47,7 @@ export async function setInterviewers(candidateId: string, vacancyId: string, na
 
       if (newNames.length < withScores.length) {
         for (let i = newNames.length; i < withScores.length; i++) {
-          const scoreCount = withScores[i].protocol?.scores.length ?? 0;
+          const scoreCount = withScores[i].protocol?.scores?.length ?? 0;
           if (scoreCount > 0) throw new Error("CANNOT_REMOVE_HAS_SCORES");
         }
         for (let i = newNames.length; i < withScores.length; i++) {

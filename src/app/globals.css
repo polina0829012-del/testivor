@@ -2,24 +2,31 @@
 @tailwind components;
 @tailwind utilities;
 
-:root {
-  --background: 220 20% 97%;
-  --foreground: 230 25% 12%;
-  --surface: 0 0% 100%;
-  --muted: 230 12% 46%;
-  --accent: 226 70% 55%;
-  --ring: 226 70% 55%;
-}
+@layer base {
+  :root {
+    --background: 220 20% 97%;
+    --foreground: 230 25% 12%;
+    --surface: 0 0% 100%;
+    --muted: 230 12% 46%;
+    --accent: 226 70% 55%;
+    --ring: 226 70% 55%;
+  }
 
-.dark {
-  --background: 230 22% 9%;
-  --foreground: 210 20% 96%;
-  --surface: 230 18% 12%;
-  --muted: 215 14% 65%;
-  --accent: 217 91% 60%;
-  --ring: 217 91% 60%;
-}
+  .dark {
+    color-scheme: dark;
+    --background: 230 22% 9%;
+    --foreground: 210 20% 96%;
+    --surface: 230 18% 12%;
+    --muted: 215 14% 65%;
+    --accent: 217 91% 60%;
+    --ring: 217 91% 60%;
+  }
 
-body {
-  @apply bg-[hsl(var(--background))] text-[hsl(var(--foreground))] antialiased;
+  html {
+    color-scheme: light dark;
+  }
+
+  body {
+    @apply m-0 min-h-screen bg-[hsl(var(--background))] text-[hsl(var(--foreground))] antialiased;
+  }
 }

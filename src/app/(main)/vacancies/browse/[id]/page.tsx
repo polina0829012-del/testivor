@@ -4,7 +4,7 @@ import { getServerSession } from "next-auth";
 import { authOptions } from "@/lib/auth-options";
 import { prisma } from "@/lib/prisma";
 import { mergedVacancyProfile } from "@/lib/vacancy-profile";
-import { PRIORITY_LABEL, STATUS_LABEL, WORK_FORMAT_LABEL } from "@/lib/vacancy-labels";
+import { PRIORITY_LABEL, vacancyStatusDisplayLabel, WORK_FORMAT_LABEL } from "@/lib/vacancy-labels";
 import { parseQuestionResponseType, questionResponseTypeLabel } from "@/lib/plan-question-types";
 
 export default async function BrowseVacancyReadOnlyPage({ params }: { params: { id: string } }) {
@@ -32,7 +32,7 @@ export default async function BrowseVacancyReadOnlyPage({ params }: { params: { 
     <div className="space-y-4">
       <div>
         <Link href="/vacancies/browse" className="text-sm text-[hsl(var(--muted))] hover:underline">
-          ← Все вакансии
+          ← Каталог вакансий
         </Link>
         <p className="mt-2 text-xs font-medium uppercase tracking-wide text-amber-700 dark:text-amber-300">
           Просмотр · не ваши данные кандидатов
@@ -45,7 +45,8 @@ export default async function BrowseVacancyReadOnlyPage({ params }: { params: { 
           {v.workFormat ? ` · ${WORK_FORMAT_LABEL[v.workFormat] ?? v.workFormat}` : ""}
           {v.targetCloseDate ? ` · закрыть до ${new Date(v.targetCloseDate).toLocaleDateString("ru-RU")}` : ""}
           <br />
-          Приоритет: {PRIORITY_LABEL[v.priority] ?? v.priority} · Статус: {STATUS_LABEL[v.status] ?? v.status}
+          Приоритет: {PRIORITY_LABEL[v.priority] ?? v.priority} · Статус:{" "}
+          {vacancyStatusDisplayLabel(v.status, v.hiredCandidateId)}
           <br />
           Кандидатов в работе: {v._count.candidates} (список доступен только владельцу)
         </p>

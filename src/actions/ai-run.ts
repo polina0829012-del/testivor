@@ -1,25 +1,50 @@
 "use server";
 
 import { revalidatePath } from "next/cache";
+import { APIError, AuthenticationError, RateLimitError } from "openai";
 import { prisma } from "@/lib/prisma";
 import { assertCandidateOwner, requireUserId } from "@/actions/guards";
 import {
   compareAllCandidates,
   generateInterviewPlan,
   narrateDiscrepancies,
-  regenerateRisksOnly,
   suggestInterviewPlanAdditions,
   summarizeCandidate,
 } from "@/lib/ai";
-import { blockHasRatingQuestions } from "@/lib/block-scores";
+import { blockHasRatingQuestions, effectiveBlockOverall } from "@/lib/block-scores";
+import { aggregateVacancyBlockOverallScores } from "@/lib/overall-block-score-agg";
 import { candidateAvgScore, candidateDisplayName, candidateReadiness } from "@/lib/stats";
 import { computeDiscrepancies } from "@/lib/discrepancies";
 import { appendPlanFromAI, replacePlanFromAI } from "@/actions/plan";
 import { mergedVacancyProfile } from "@/lib/vacancy-profile";
 import { WORK_FORMAT_LABEL } from "@/lib/vacancy-labels";
 
+function formatLlmApiError(e: APIError): string {
+  if (e instanceof AuthenticationError || e.status === 401) {
+    return "Доступ к API модели отклонён (неверный или просроченный ключ). Проверьте OPENAI_API_KEY или OPENROUTER_API_KEY.";
+  }
+  if (e instanceof RateLimitError || e.status === 429) {
+    return "Превышен лимит запросов к API модели. Подождите или смените тариф или ключ.";
+  }
+  if (e.status === 400) {
+    const m = e.message.toLowerCase();
+    if (
+      m.includes("provider returned") ||
+      m.includes("response_format") ||
+      m.includes("json_object") ||
+      m.includes("json mode")
+    ) {
+      return "Провайдер API отклонил запрос (часто из‑за JSON mode или выбранной модели). В .env попробуйте OPENAI_DISABLE_JSON_MODE=true, другую OPENAI_MODEL или другой совместимый API.";
+    }
+  }
+  return e.message || "Ошибка API модели";
+}
+
 /** Не даём исключениям из guards/Prisma уходить в ответ action — иначе в браузере часто «Failed to fetch». */
 function toActionError(e: unknown): { error: string } {
+  if (e instanceof APIError) {
+    return { error: formatLlmApiError(e) };
+  }
   if (e instanceof Error) {
     if (e.message === "UNAUTHORIZED") {
       return { error: "Сессия недоступна. Обновите страницу и войдите снова." };
@@ -107,6 +132,7 @@ export async function runGeneratePlanAI(vacancyId: string) {
 
 type ProtocolForText = {
   scores: {
+    overallScore?: number | null;
     score: number;
     notes: string;
     planBlockId: string;
@@ -122,9 +148,10 @@ type ProtocolForText = {
 function buildProtocolsText(interviewers: { name: string; protocol: ProtocolForText | null }[]) {
   return interviewers
     .map((i) => {
-      if (!i.protocol?.scores.length) return `${i.name}:\n  (нет протокола)`;
-      const qa = i.protocol.questionAnswers ?? [];
-      const lines = i.protocol.scores.map((s) => {
+      const p = i.protocol;
+      if (!p || !(p.scores?.length ?? 0)) return `${i.name}:\n  (нет протокола)`;
+      const qa = p.questionAnswers ?? [];
+      const lines = (p.scores ?? []).map((s) => {
         const title = s.planBlock?.title ?? s.planBlockId;
         const subs = qa
           .filter((a) => a.planQuestion.blockId === s.planBlockId)
@@ -138,9 +165,13 @@ function buildProtocolsText(interviewers: { name: string; protocol: ProtocolForT
         const blockQa = qa.filter((a) => a.planQuestion.blockId === s.planBlockId);
         const hasRatings = blockQa.some((a) => a.planQuestion.responseType === "rating");
         const notesPart = s.notes?.trim() ? ` — ${s.notes.trim()}` : "";
-        const head = hasRatings
-          ? `  [${title}] среднее по балльным вопросам блока: ${s.score}/5${notesPart}`
-          : `  [${title}]${notesPart}`;
+        const overallPart = `общая оценка блока интервьюера: ${effectiveBlockOverall(s)}/5`;
+        const rubricPart = hasRatings
+          ? `среднее по балльным пунктам плана: ${s.score}/5`
+          : null;
+        const head = rubricPart
+          ? `  [${title}] ${overallPart}; ${rubricPart}${notesPart}`
+          : `  [${title}] ${overallPart}${notesPart}`;
         return subs.length ? `${head}\n${subs.join("\n")}` : head;
       });
       return `${i.name}:\n${lines.join("\n\n")}`;
@@ -157,6 +188,87 @@ const protocolIncludeForAi = {
   },
 } as const;
 
+const candidateIncludeForSummaryAndDisc = {
+  vacancy: {
+    include: {
+      blocks: { orderBy: { sortOrder: "asc" as const }, include: { questions: true } },
+    },
+  },
+  interviewers: {
+    include: {
+      protocol: {
+        include: protocolIncludeForAi,
+      },
+    },
+  },
+} as const;
+
+async function buildDiscrepanciesJson(
+  full: {
+    interviewers: { name: string; protocol: ProtocolForText | null }[];
+    vacancy: {
+      blocks: { id: string; title: string; questions: { responseType: string }[] }[];
+    };
+  },
+): Promise<string> {
+  const filledProtocolsCount = full.interviewers.filter(
+    (i) => (i.protocol?.scores?.length ?? 0) > 0,
+  ).length;
+  if (filledProtocolsCount < 2) {
+    return JSON.stringify({
+      discrepancies: [],
+      narrative: null,
+      discrepancyNotice:
+        "Недостаточно данных для анализа расхождений: нужны заполненные протоколы минимум от двух интервьюеров. Когда появится второй протокол, снова нажмите «AI: сводка».",
+    });
+  }
+
+  const blocks = full.vacancy.blocks.map((b) => ({
+    id: b.id,
+    title: b.title,
+    hasRatingQuestions: blockHasRatingQuestions(b.questions),
+  }));
+  const protocols = full.interviewers
+    .filter((i) => i.protocol)
+    .map((i) => ({
+      interviewerName: i.name,
+      scores:
+        (i.protocol?.scores ?? []).map((s) => ({
+          planBlockId: s.planBlockId,
+          overallScore: effectiveBlockOverall(s),
+          rubricDerivedScore: s.score,
+        })),
+    }));
+  const disc = computeDiscrepancies(blocks, protocols);
+  const protocolsText = buildProtocolsText(full.interviewers);
+
+  if (disc.length === 0) {
+    return JSON.stringify({
+      discrepancies: disc,
+      narrative: null,
+      discrepancyNotice: null,
+    });
+  }
+
+  try {
+    const narrative = await narrateDiscrepancies({
+      discrepanciesJson: JSON.stringify(disc),
+      protocolsText,
+    });
+    return JSON.stringify({
+      discrepancies: disc,
+      narrative,
+      discrepancyNotice: null,
+    });
+  } catch {
+    return JSON.stringify({
+      discrepancies: disc,
+      narrative: null,
+      discrepancyNotice: null,
+    });
+  }
+}
+
 export async function runSummarizeAI(candidateId: string, vacancyId: string) {
   try {
     const userId = await requireUserId();
@@ -165,16 +277,7 @@ export async function runSummarizeAI(candidateId: string, vacancyId: string) {
 
     const full = await prisma.candidate.findUnique({
       where: { id: candidateId },
-      include: {
-        vacancy: true,
-        interviewers: {
-          include: {
-            protocol: {
-              include: protocolIncludeForAi,
-            },
-          },
-        },
-      },
+      include: candidateIncludeForSummaryAndDisc,
     });
     if (!full) return { error: "Не найдено." };
 
@@ -184,180 +287,18 @@ export async function runSummarizeAI(candidateId: string, vacancyId: string) {
       vacancyTitle: full.vacancy.title,
       protocolsText,
     });
+    const discrepanciesJson = await buildDiscrepanciesJson(full);
     await prisma.candidate.update({
       where: { id: candidateId },
       data: {
         summaryJson: JSON.stringify(summary),
         risksJson: JSON.stringify(summary.risks),
         summaryUpdatedAt: new Date(),
+        discrepanciesJson,
       },
     });
     revalidatePath(`/vacancies/${vacancyId}/candidates/${candidateId}`);
     return { ok: true as const };
-  } catch (e) {
-    return toActionError(e);
-  }
-}
-
-export async function runDiscrepancyAI(candidateId: string, vacancyId: string) {
-  try {
-    const userId = await requireUserId();
-    const c = await assertCandidateOwner(candidateId, userId);
-    if (c.vacancyId !== vacancyId) return { error: "Несовпадение вакансии." };
-
-    const full = await prisma.candidate.findUnique({
-      where: { id: candidateId },
-      include: {
-        vacancy: {
-          include: {
-            blocks: { orderBy: { sortOrder: "asc" }, include: { questions: true } },
-          },
-        },
-        interviewers: {
-          include: {
-            protocol: {
-              include: protocolIncludeForAi,
-            },
-          },
-        },
-      },
-    });
-    if (!full) return { error: "Не найдено." };
-
-    const filledProtocolsCount = full.interviewers.filter(
-      (i) => (i.protocol?.scores.length ?? 0) > 0,
-    ).length;
-    if (filledProtocolsCount < 2) {
-      return {
-        error:
-          "Для выявления расхождений необходима оценка более чем у одного интервьюера — дождитесь заполненных протоколов минимум от двух интервьюеров.",
-      };
-    }
-
-    const blocks = full.vacancy.blocks.map((b) => ({
-      id: b.id,
-      title: b.title,
-      hasRatingQuestions: blockHasRatingQuestions(b.questions),
-    }));
-    const protocols = full.interviewers
-      .filter((i) => i.protocol)
-      .map((i) => ({
-        interviewerName: i.name,
-        scores:
-          i.protocol?.scores.map((s) => ({
-            planBlockId: s.planBlockId,
-            score: s.score,
-          })) ?? [],
-      }));
-    const disc = computeDiscrepancies(blocks, protocols);
-    const protocolsText = buildProtocolsText(full.interviewers);
-
-    if (disc.length === 0) {
-      await prisma.candidate.update({
-        where: { id: candidateId },
-        data: {
-          discrepanciesJson: JSON.stringify({ discrepancies: disc, narrative: null }),
-        },
-      });
-      revalidatePath(`/vacancies/${vacancyId}/candidates/${candidateId}`);
-      return { ok: true as const };
-    }
-
-    try {
-      const narrative = await narrateDiscrepancies({
-        discrepanciesJson: JSON.stringify(disc),
-        protocolsText,
-      });
-      await prisma.candidate.update({
-        where: { id: candidateId },
-        data: {
-          discrepanciesJson: JSON.stringify({ discrepancies: disc, narrative }),
-        },
-      });
-      revalidatePath(`/vacancies/${vacancyId}/candidates/${candidateId}`);
-      return { ok: true as const };
-    } catch (e) {
-      await prisma.candidate.update({
-        where: { id: candidateId },
-        data: {
-          discrepanciesJson: JSON.stringify({ discrepancies: disc, narrative: null }),
-        },
-      });
-      revalidatePath(`/vacancies/${vacancyId}/candidates/${candidateId}`);
-      const msg = e instanceof Error ? e.message : "Ошибка ИИ";
-      return { error: `${msg} (расхождения посчитаны без текста ИИ)` };
-    }
-  } catch (e) {
-    return toActionError(e);
-  }
-}
-
-export async function runRegenerateRisks(candidateId: string, vacancyId: string) {
-  try {
-    const userId = await requireUserId();
-    const c = await assertCandidateOwner(candidateId, userId);
-    if (c.vacancyId !== vacancyId) return { error: "Несовпадение вакансии." };
-
-    const full = await prisma.candidate.findUnique({
-      where: { id: candidateId },
-      include: {
-        vacancy: true,
-        interviewers: {
-          include: {
-            protocol: {
-              include: protocolIncludeForAi,
-            },
-          },
-        },
-      },
-    });
-    if (!full) return { error: "Не найдено." };
-
-    let previousRisks: string[] = [];
-    if (full.summaryJson) {
-      try {
-        const s = JSON.parse(full.summaryJson) as { risks?: string[] };
-        previousRisks = s.risks ?? [];
-      } catch {
-        previousRisks = [];
-      }
-    }
-    if (full.risksJson) {
-      try {
-        previousRisks = JSON.parse(full.risksJson) as string[];
-      } catch {
-        /* keep */
-      }
-    }
-
-    const protocolsText = buildProtocolsText(full.interviewers);
-    try {
-      const { risks } = await regenerateRisksOnly({ protocolsText, previousRisks });
-      await prisma.candidate.update({
-        where: { id: candidateId },
-        data: {
-          risksJson: JSON.stringify(risks),
-          summaryUpdatedAt: new Date(),
-        },
-      });
-      if (full.summaryJson) {
-        try {
-          const summary = JSON.parse(full.summaryJson) as Record<string, unknown>;
-          summary.risks = risks;
-          await prisma.candidate.update({
-            where: { id: candidateId },
-            data: { summaryJson: JSON.stringify(summary) },
-          });
-        } catch {
-          /* ignore */
-        }
-      }
-      revalidatePath(`/vacancies/${vacancyId}/candidates/${candidateId}`);
-      return { ok: true as const };
-    } catch (e) {
-      const msg = e instanceof Error ? e.message : "Ошибка ИИ";
-      return { error: msg };
-    }
   } catch (e) {
     return toActionError(e);
   }
@@ -390,17 +331,26 @@ export async function runCompareAllCandidatesAI(vacancyId: string) {
       return { error: "Для сравнения нужно минимум два кандидата." };
     }
 
+    const blockScoreRows = await prisma.blockScore.findMany({
+      where: { planBlock: { vacancyId } },
+      select: {
+        score: true,
+        protocol: { select: { interviewer: { select: { candidateId: true } } } },
+      },
+    });
+    const { avgByCandidateId } = aggregateVacancyBlockOverallScores(blockScoreRows);
+
     const blockCount = v.blocks.length;
     const parts: string[] = [];
     for (const c of v.candidates) {
       const name = candidateDisplayName(c.name);
-      const avg = candidateAvgScore(c);
+      const avg = avgByCandidateId[c.id] ?? candidateAvgScore(c);
       const readiness = candidateReadiness(c, blockCount);
       const protocolsText = buildProtocolsText(
         c.interviewers.map((i) => ({ name: i.name, protocol: i.protocol })),
       );
       parts.push(
-        `--- Кандидат id=${c.id}\nОтображаемое имя: ${name}\nСредний балл (по оценкам в протоколах): ${avg ?? "—"}\nПротоколы: ${readiness.done}/${readiness.total} сдано\n\n${protocolsText}`,
+        `--- Кандидат id=${c.id}\nОтображаемое имя: ${name}\nСредний балл (общие оценки блоков 1–5 по всем протоколам): ${avg ?? "—"}\nПротоколы: ${readiness.done}/${readiness.total} сдано\n\n${protocolsText}`,
       );
     }
 

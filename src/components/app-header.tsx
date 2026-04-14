@@ -23,12 +23,6 @@ export async function AppHeader() {
           >
             Главная
           </Link>
-          <Link
-            href="/dashboard?catalog=all"
-            className="relative z-[1] inline-flex min-h-9 items-center rounded-lg px-2.5 py-1.5 text-sm text-[hsl(var(--muted))] touch-manipulation ring-offset-2 hover:bg-black/[0.04] hover:text-[hsl(var(--foreground))] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[hsl(var(--accent))] dark:hover:bg-white/[0.06]"
-          >
-            Все вакансии
-          </Link>
         </nav>
         <div className="flex shrink-0 items-center justify-start gap-2 sm:justify-end">
           <span className="hidden max-w-[160px] truncate text-xs text-[hsl(var(--muted))] sm:inline">

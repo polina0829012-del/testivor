@@ -22,9 +22,22 @@ export function blockHasRatingQuestions(questions: { responseType: string }[]): 
 }
 
 /**
- * Значение для BlockScore.score: среднее по балльным вопросам блока, округление 1–5.
- * Если в блоке нет балльных вопросов — нейтральное 3 (строка в БД для целостности протокола).
+ * Значение для `BlockScore.score` (производное): среднее по балльным пунктам плана в блоке, округление 1–5.
+ * Если в блоке нет балльных вопросов — 3. Итоговая оценка интервьюера хранится отдельно в `overallScore`.
  */
+/**
+ * «Общая» оценка блока для UI и расхождений (1–5).
+ * В актуальной схеме хранится в `overallScore`; если сгенерированный Prisma Client ещё без этого поля
+ * или колонка не подтянута — берём `score` (рубрика / данные до миграции).
+ */
+export function effectiveBlockOverall(s: { overallScore?: number | null; score?: number | null }): number {
+  const o = s.overallScore != null ? Number(s.overallScore) : NaN;
+  if (Number.isFinite(o) && o >= 1 && o <= 5) return Math.round(o);
+  const r = s.score != null ? Number(s.score) : NaN;
+  if (Number.isFinite(r) && r >= 1 && r <= 5) return Math.round(r);
+  return 3;
+}
+
 export function deriveStoredBlockScore(
   questions: { id: string; responseType: string }[],
   questionIdToScore: Map<string, number>,

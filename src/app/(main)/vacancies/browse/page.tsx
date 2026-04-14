@@ -3,7 +3,7 @@ import { redirect } from "next/navigation";
 import { getServerSession } from "next-auth";
 import { authOptions } from "@/lib/auth-options";
 import { prisma } from "@/lib/prisma";
-import { PRIORITY_LABEL, STATUS_LABEL } from "@/lib/vacancy-labels";
+import { PRIORITY_LABEL, vacancyStatusDisplayLabel } from "@/lib/vacancy-labels";
 
 export default async function BrowseVacanciesPage() {
   const session = await getServerSession(authOptions);
@@ -24,7 +24,7 @@ export default async function BrowseVacanciesPage() {
         <Link href="/dashboard" className="text-sm text-[hsl(var(--muted))] hover:underline">
           ← Главная / мои вакансии
         </Link>
-        <h1 className="mt-2 text-2xl font-bold">Все вакансии</h1>
+        <h1 className="mt-2 text-2xl font-bold">Каталог вакансий</h1>
         <p className="mt-1 text-sm text-[hsl(var(--muted))]">
           Вакансии всех HR в системе. Открывайте карточку для просмотра описания и плана интервью (без данных кандидатов и внутренних заметок владельца).
         </p>
@@ -59,7 +59,7 @@ export default async function BrowseVacanciesPage() {
                         {PRIORITY_LABEL[v.priority] ?? v.priority}
                       </span>
                       <span className="rounded-md bg-black/5 px-2 py-0.5 text-xs dark:bg-white/10">
-                        {STATUS_LABEL[v.status] ?? v.status}
+                        {vacancyStatusDisplayLabel(v.status, v.hiredCandidateId)}
                       </span>
                     </div>
                   </div>

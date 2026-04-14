@@ -14,16 +14,20 @@ export function LoginForm() {
     setError(null);
     setPending(true);
     const fd = new FormData(e.currentTarget);
-    const email = String(fd.get("email") ?? "");
+    const email = String(fd.get("email") ?? "").trim();
     const password = String(fd.get("password") ?? "");
     const res = await signIn("credentials", {
       email,
       password,
       redirect: false,
+      callbackUrl: "/dashboard",
     });
     setPending(false);
     if (res?.error) {
-      setError("Неверный email или пароль.");
+      setError(
+        "Не удалось войти. Проверьте email и пароль. Демо после сида: demo@demo.com и пароль demo123 (три цифры, без пробелов). " +
+          "Если пароль точно верный — полностью перезапустите dev-сервер, откройте сайт снова и при необходимости удалите куки для localhost (или попробуйте окно инкогнито).",
+      );
       return;
     }
     router.push("/dashboard");

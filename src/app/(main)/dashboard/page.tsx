@@ -6,7 +6,8 @@ import { authOptions } from "@/lib/auth-options";
 import { prisma } from "@/lib/prisma";
 import { DashboardCatalogToggle } from "@/components/dashboard-catalog-toggle";
 import { DashboardStats } from "@/components/dashboard-stats";
-import { PRIORITY_LABEL, STATUS_LABEL } from "@/lib/vacancy-labels";
+import { countCandidatesWithRejectRecommendation } from "@/lib/candidate-outcome-stats";
+import { PRIORITY_LABEL, vacancyStatusDisplayLabel } from "@/lib/vacancy-labels";
 import { isLlmConfigured, isVercelDeployment } from "@/lib/ai";
 
 export const dynamic = "force-dynamic";
@@ -15,6 +16,13 @@ type CatalogSearch = { catalog?: string };
 
 const listCardClass =
   "flex h-full min-h-[7rem] flex-col gap-2 rounded-xl border border-black/[0.07] bg-[hsl(var(--surface))] px-3.5 py-3 text-sm shadow-sm ring-1 ring-black/[0.03] transition hover:border-[hsl(var(--accent))]/45 hover:shadow-md hover:ring-[hsl(var(--accent))]/12 dark:border-white/[0.08] dark:ring-white/[0.04]";
+
+const hiredClosedCardClass =
+  "flex h-full min-h-[7rem] flex-col gap-2 rounded-xl border border-emerald-500/45 bg-gradient-to-br from-emerald-500/[0.1] to-[hsl(var(--surface))] px-3.5 py-3 text-sm shadow-sm ring-1 ring-emerald-500/25 transition hover:border-emerald-500/65 hover:shadow-md hover:ring-emerald-500/30 dark:border-emerald-500/40 dark:from-emerald-500/[0.14] dark:ring-emerald-500/20";
+
+function vacancyListCardClass(v: { status: string; hiredCandidateId: string | null }) {
+  return v.status === "closed" && v.hiredCandidateId != null ? hiredClosedCardClass : listCardClass;
+}
 
 const catalogShell =
   "rounded-2xl border border-black/[0.07] bg-[hsl(var(--surface))] p-5 shadow-[0_1px_3px_rgba(0,0,0,0.04)] ring-1 ring-black/[0.03] dark:border-white/[0.08] dark:shadow-none dark:ring-white/[0.04] sm:p-6";
@@ -31,13 +39,19 @@ export default async function DashboardPage({
   const sp = await Promise.resolve(searchParams ?? {});
   const catalogAll = sp.catalog === "all";
 
-  const [statusGroups, totalVacancies, totalCandidates, vacanciesMine, vacanciesAll] = await Promise.all([
+  const [
+    statusGroups,
+    totalVacancies,
+    vacanciesMine,
+    vacanciesAll,
+    hiredPlacements,
+    candidateSummaries,
+  ] = await Promise.all([
     prisma.vacancy.groupBy({
       by: ["status"],
       _count: { _all: true },
     }),
     prisma.vacancy.count(),
-    prisma.candidate.count(),
     !catalogAll
       ? prisma.vacancy.findMany({
           where: { userId },
@@ -56,57 +70,51 @@ export default async function DashboardPage({
           },
         })
       : Promise.resolve(null),
+    prisma.vacancy.count({ where: { hiredCandidateId: { not: null } } }),
+    prisma.candidate.findMany({ select: { summaryJson: true } }),
   ]);
+
+  const rejectRecommendationCount = countCandidatesWithRejectRecommendation(candidateSummaries);
 
   const byStatus: Record<string, number> = {};
   for (const g of statusGroups) {
     byStatus[g.status] = g._count._all;
   }
-  const closedCount = byStatus.closed ?? 0;
   const llmOk = isLlmConfigured();
   const onVercel = isVercelDeployment();
 
   return (
     <div className="w-full space-y-6 pb-8">
-      <div className="relative overflow-hidden rounded-2xl border border-black/[0.08] bg-gradient-to-br from-[hsl(var(--accent))]/[0.12] via-[hsl(var(--surface))] to-[hsl(var(--surface))] p-6 shadow-sm ring-1 ring-black/[0.04] dark:border-white/10 dark:from-[hsl(var(--accent))]/15 dark:ring-white/[0.06] sm:p-7">
-        <div className="pointer-events-none absolute -right-16 -top-16 h-48 w-48 rounded-full bg-[hsl(var(--accent))]/10 blur-3xl dark:bg-[hsl(var(--accent))]/20" />
-        <div className="relative flex items-start gap-3">
-          <span className="mt-0.5 flex h-11 w-11 shrink-0 items-center justify-center rounded-2xl bg-[hsl(var(--accent))]/15 text-[hsl(var(--accent))] shadow-sm dark:bg-[hsl(var(--accent))]/25">
-            <LayoutDashboard className="h-5 w-5" strokeWidth={2} aria-hidden />
+      <div className="relative overflow-hidden rounded-xl border border-black/[0.08] bg-gradient-to-br from-[hsl(var(--accent))]/[0.1] via-[hsl(var(--surface))] to-[hsl(var(--surface))] px-4 py-3 shadow-sm ring-1 ring-black/[0.04] dark:border-white/10 dark:from-[hsl(var(--accent))]/12 dark:ring-white/[0.06] sm:px-5 sm:py-3.5">
+        <div className="pointer-events-none absolute -right-10 -top-10 h-32 w-32 rounded-full bg-[hsl(var(--accent))]/10 blur-3xl dark:bg-[hsl(var(--accent))]/18" />
+        <div className="relative flex items-center gap-2.5 sm:gap-3">
+          <span className="flex h-9 w-9 shrink-0 items-center justify-center rounded-xl bg-[hsl(var(--accent))]/15 text-[hsl(var(--accent))] shadow-sm dark:bg-[hsl(var(--accent))]/20">
+            <LayoutDashboard className="h-4 w-4" strokeWidth={2} aria-hidden />
           </span>
-          <div className="min-w-0">
-            <h1 className="text-2xl font-bold tracking-tight sm:text-3xl">Главная</h1>
-            <p className="mt-2 max-w-2xl text-sm leading-relaxed text-[hsl(var(--muted))] sm:text-[15px]">
-              Сводка по системе и каталог вакансий. Переключайте «Мои» и «Все» ниже.
-            </p>
-          </div>
+          <h1 className="min-w-0 text-lg font-bold tracking-tight sm:text-xl">Главная</h1>
         </div>
       </div>
 
       <DashboardStats
         totalVacancies={totalVacancies}
-        totalCandidates={totalCandidates}
-        closedCount={closedCount}
         byStatus={byStatus}
+        hiredCount={hiredPlacements}
+        rejectRecommendationCount={rejectRecommendationCount}
       />
 
-      <div
-        role="status"
-        className={
-          llmOk
-            ? "rounded-xl border border-emerald-500/25 bg-emerald-500/[0.08] px-4 py-3 text-sm text-emerald-900 dark:border-emerald-400/20 dark:bg-emerald-500/10 dark:text-emerald-100"
-            : "rounded-xl border border-amber-500/30 bg-amber-500/[0.08] px-4 py-3 text-sm text-amber-950 dark:border-amber-400/25 dark:bg-amber-500/10 dark:text-amber-50"
-        }
-      >
-        <p className="font-medium">{llmOk ? "ИИ подключён" : "ИИ не настроен на сервере"}</p>
-        <p className="mt-1 text-xs opacity-90">
-          {llmOk
-            ? "ИИ выполняется на сервере: любой пользователь, вошедший на этот сайт, использует одни и те же настройки LLM (ваш ключ на хостинге)."
-            : onVercel
+      {!llmOk ? (
+        <div
+          role="status"
+          className="rounded-xl border border-amber-500/30 bg-amber-500/[0.08] px-4 py-3 text-sm text-amber-950 dark:border-amber-400/25 dark:bg-amber-500/10 dark:text-amber-50"
+        >
+          <p className="font-medium">ИИ не настроен на сервере</p>
+          <p className="mt-1 text-xs opacity-90">
+            {onVercel
               ? "Сервер не видит ключ: в Vercel → Settings → Environment Variables добавьте для той же среды, что и деплой (часто Production), переменные: OPENAI_API_KEY или OPENROUTER_API_KEY, OPENAI_BASE_URL=https://openrouter.ai/api/v1, OPENAI_MODEL=openai/gpt-4o-mini. Сохраните и Redeploy. Локальный .env с ПК сюда не подставляется."
               : "Локально: в корне проекта в .env или .env.local задайте OPENAI_API_KEY или OPENROUTER_API_KEY (и при OpenRouter — OPENAI_BASE_URL / OPENAI_MODEL), полностью перезапустите npm run dev. Если открываете сайт на vercel.app — ключи нужны в панели Vercel, не только в .env."}
-        </p>
-      </div>
+          </p>
+        </div>
+      ) : null}
 
       <section className={catalogShell}>
         <div className="mb-5 flex flex-col gap-4 sm:flex-row sm:items-start sm:justify-between">
@@ -118,7 +126,7 @@ export default async function DashboardPage({
               <div>
                 <DashboardCatalogToggle mode={catalogAll ? "all" : "mine"} />
                 <h2 className="mt-3 text-lg font-semibold tracking-tight">
-                  {catalogAll ? "Все вакансии" : "Мои вакансии"}
+                  {catalogAll ? "Каталог" : "Мои вакансии"}
                 </h2>
                 <p className="mt-1 text-sm leading-relaxed text-[hsl(var(--muted))]">
                   {catalogAll
@@ -151,14 +159,14 @@ export default async function DashboardPage({
                 const href = mine ? `/vacancies/${v.id}` : `/vacancies/browse/${v.id}`;
                 return (
                   <li key={v.id} className="min-w-0">
-                    <Link href={href} className={listCardClass}>
+                    <Link href={href} className={vacancyListCardClass(v)}>
                       <span className="line-clamp-2 font-medium leading-snug">{v.title}</span>
                       <div className="mt-auto flex flex-wrap gap-1.5">
                         <span className="rounded-lg bg-black/[0.05] px-2 py-0.5 text-[11px] dark:bg-white/10">
                           {PRIORITY_LABEL[v.priority] ?? v.priority}
                         </span>
                         <span className="rounded-lg bg-black/[0.05] px-2 py-0.5 text-[11px] dark:bg-white/10">
-                          {STATUS_LABEL[v.status] ?? v.status}
+                          {vacancyStatusDisplayLabel(v.status, v.hiredCandidateId)}
                         </span>
                         {mine ? (
                           <span className="rounded-lg bg-[hsl(var(--accent))]/15 px-2 py-0.5 text-[11px] font-medium text-[hsl(var(--accent))]">
@@ -184,14 +192,14 @@ export default async function DashboardPage({
           <ul className="grid grid-cols-1 gap-3 sm:grid-cols-2 lg:grid-cols-4">
             {vacanciesMine!.map((v) => (
               <li key={v.id} className="min-w-0">
-                <Link href={`/vacancies/${v.id}`} className={listCardClass}>
+                <Link href={`/vacancies/${v.id}`} className={vacancyListCardClass(v)}>
                   <span className="line-clamp-2 font-medium leading-snug">{v.title}</span>
                   <div className="mt-auto flex flex-wrap gap-1.5">
                     <span className="rounded-lg bg-black/[0.05] px-2 py-0.5 text-[11px] dark:bg-white/10">
                       {PRIORITY_LABEL[v.priority] ?? v.priority}
                     </span>
                     <span className="rounded-lg bg-black/[0.05] px-2 py-0.5 text-[11px] dark:bg-white/10">
-                      {STATUS_LABEL[v.status] ?? v.status}
+                      {vacancyStatusDisplayLabel(v.status, v.hiredCandidateId)}
                     </span>
                   </div>
                   <span className="text-[11px] text-[hsl(var(--muted))]">
